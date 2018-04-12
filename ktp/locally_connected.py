@@ -8,6 +8,7 @@ from torch.nn.modules.utils import _single, _pair, _triple
 from torch.autograd.function import Function, once_differentiable
 from torch._thnn import type2backend
 
+
 class Col2Im(Function):
 
     @staticmethod
@@ -111,8 +112,8 @@ def unfold(input, kernel_size, dilation=1, padding=0, stride=1):
     else:
         raise NotImplementedError("Input Error: Only 4D input Tensors supported (got {}D)".format(input.dim()))
 
-
-def conv2d_local(input: torch._TensorBase, weight: torch._TensorBase, bias=None, padding=0, stride=1, dilation=1):
+import ipdb
+def conv2d_local(input, weight, bias=None, padding=0, stride=1, dilation=1):
     """Calculate the local convolution.
 
     Args:
@@ -126,6 +127,7 @@ def conv2d_local(input: torch._TensorBase, weight: torch._TensorBase, bias=None,
     Returns:
 
     """
+    # ipdb.set_trace()
     if input.dim() != 4:
         raise NotImplementedError("Input Error: Only 4D input Tensors supported (got {}D)".format(input.dim()))
     if weight.dim() != 6:
@@ -137,10 +139,14 @@ def conv2d_local(input: torch._TensorBase, weight: torch._TensorBase, bias=None,
 
     # N x [inC * kH * kW] x [outH * outW]
     cols = unfold(input, kernel_size, dilation=dilation, padding=padding, stride=stride)
-    cols = cols.view(cols.size(0), cols.size(1), cols.size(2), 1).permute(0, 2, 3, 1)
+    cols2 = cols.view(cols.size(0), cols.size(1), cols.size(2), 1).permute(0, 2, 3, 1)
 
-    out = torch.matmul(cols, weight.view(out_height * out_width, out_channels, in_channels * kernel_height * kernel_width).permute(0, 2, 1))
-    out = out.view(cols.size(0), out_height, out_width, out_channels).permute(0, 3, 1, 2)
+    output_size = out_height * out_width
+    input_size = in_channels * kernel_height * kernel_width
+    weights_view = weight.view(output_size, out_channels, input_size)
+    permuted_weights = weights_view.permute(0, 2, 1)
+    out = torch.matmul(cols2, permuted_weights)
+    out = out.view(cols2.size(0), out_height, out_width, out_channels).permute(0, 3, 1, 2)
 
     if bias is not None:
         out = out + bias.expand_as(out)
@@ -167,6 +173,7 @@ class Conv2dLocal(Module):
             (in_height + 2 * self.padding[0] - self.dilation[0] * (self.kernel_size[0] - 1) - 1) / self.stride[0] + 1))
         self.out_width = int(math.floor(
             (in_width + 2 * self.padding[1] - self.dilation[1] * (self.kernel_size[1] - 1) - 1) / self.stride[1] + 1))
+
         self.weight = Parameter(torch.Tensor(
             self.out_height, self.out_width,
             out_channels, in_channels, *self.kernel_size))
