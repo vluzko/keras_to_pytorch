@@ -1,2 +1,7 @@
 .idea/
+.hypothesis/
+.pytest_cache/
 *egg-info/
+test/mhcflurry_data/
+__pycache__/
+.cache/
