@@ -6,113 +6,114 @@ from torch.nn.parameter import Parameter
 from torch.nn.modules.module import Module
 from torch.nn.modules.utils import _single, _pair, _triple
 from torch.autograd.function import Function, once_differentiable
+from torch.nn.functional import unfold
 from torch._thnn import type2backend
 
 
-class Col2Im(Function):
-
-    @staticmethod
-    def forward(ctx, input, output_size, kernel_size, dilation, padding, stride):
-
-        ctx.output_size = output_size
-        ctx.kernel_size = kernel_size
-        ctx.dilation = dilation
-        ctx.padding = padding
-        ctx.stride = stride
-
-        ctx._backend = type2backend[input.type()]
-
-        output = input.new()
-
-        ctx._backend.Col2Im_updateOutput(ctx._backend.library_state,
-                                         input, output,
-                                         output_size[0], output_size[1],
-                                         kernel_size[0], kernel_size[1],
-                                         dilation[0], dilation[1],
-                                         padding[0], padding[1],
-                                         stride[0], stride[1])
-        return output
-
-    @staticmethod
-    @once_differentiable
-    def backward(ctx, grad_output):
-
-        grad_input = grad_output.new()
-
-        ctx._backend.Col2Im_updateGradInput(ctx._backend.library_state,
-                                            grad_output,
-                                            grad_input,
-                                            ctx.kernel_size[0], ctx.kernel_size[1],
-                                            ctx.dilation[0], ctx.dilation[1],
-                                            ctx.padding[0], ctx.padding[1],
-                                            ctx.stride[0], ctx.stride[1])
-        return grad_input, None, None, None, None, None
-
-
-class Im2Col(Function):
-
-    @staticmethod
-    def forward(ctx, input, kernel_size, dilation, padding, stride):
-
-        assert input.dim() == 4
-
-        ctx.kernel_size = kernel_size
-        ctx.dilation = dilation
-        ctx.padding = padding
-        ctx.stride = stride
-        ctx.input_size = (input.size(2), input.size(3))
-
-        ctx._backend = type2backend[input.type()]
-
-        output = input.new()
-
-        ctx._backend.Im2Col_updateOutput(ctx._backend.library_state,
-                                         input, output,
-                                         kernel_size[0], kernel_size[1],
-                                         dilation[0], dilation[1],
-                                         padding[0], padding[1],
-                                         stride[0], stride[1])
-        return output
-
-    @staticmethod
-    @once_differentiable
-    def backward(ctx, grad_output):
-
-        grad_input = grad_output.new()
-
-        ctx._backend.Im2Col_updateGradInput(ctx._backend.library_state,
-                                            grad_output,
-                                            grad_input,
-                                            ctx.input_size[0], ctx.input_size[1],
-                                            ctx.kernel_size[0], ctx.kernel_size[1],
-                                            ctx.dilation[0], ctx.dilation[1],
-                                            ctx.padding[0], ctx.padding[1],
-                                            ctx.stride[0], ctx.stride[1])
-        return grad_input, None, None, None, None
+# class Col2Im(Function):
+#
+#     @staticmethod
+#     def forward(ctx, input, output_size, kernel_size, dilation, padding, stride):
+#
+#         ctx.output_size = output_size
+#         ctx.kernel_size = kernel_size
+#         ctx.dilation = dilation
+#         ctx.padding = padding
+#         ctx.stride = stride
+#
+#         ctx._backend = type2backend[input.type()]
+#
+#         output = input.new()
+#
+#         ctx._backend.Col2Im_updateOutput(ctx._backend.library_state,
+#                                          input, output,
+#                                          output_size[0], output_size[1],
+#                                          kernel_size[0], kernel_size[1],
+#                                          dilation[0], dilation[1],
+#                                          padding[0], padding[1],
+#                                          stride[0], stride[1])
+#         return output
+#
+#     @staticmethod
+#     @once_differentiable
+#     def backward(ctx, grad_output):
+#
+#         grad_input = grad_output.new()
+#
+#         ctx._backend.Col2Im_updateGradInput(ctx._backend.library_state,
+#                                             grad_output,
+#                                             grad_input,
+#                                             ctx.kernel_size[0], ctx.kernel_size[1],
+#                                             ctx.dilation[0], ctx.dilation[1],
+#                                             ctx.padding[0], ctx.padding[1],
+#                                             ctx.stride[0], ctx.stride[1])
+#         return grad_input, None, None, None, None, None
 
 
-def assert_int_or_pair(arg, arg_name, message):
-    assert isinstance(arg, int) or len(arg) == 2, message.format(arg_name)
+# class Im2Col(Function):
+#
+#     @staticmethod
+#     def forward(ctx, input, kernel_size, dilation, padding, stride):
+#
+#         assert input.dim() == 4
+#
+#         ctx.kernel_size = kernel_size
+#         ctx.dilation = dilation
+#         ctx.padding = padding
+#         ctx.stride = stride
+#         ctx.input_size = (input.size(2), input.size(3))
+#
+#         ctx._backend = type2backend[input.type()]
+#
+#         output = input.new()
+#
+#         ctx._backend.Im2Col_updateOutput(ctx._backend.library_state,
+#                                          input, output,
+#                                          kernel_size[0], kernel_size[1],
+#                                          dilation[0], dilation[1],
+#                                          padding[0], padding[1],
+#                                          stride[0], stride[1])
+#         return output
+#
+#     @staticmethod
+#     @once_differentiable
+#     def backward(ctx, grad_output):
+#
+#         grad_input = grad_output.new()
+#
+#         ctx._backend.Im2Col_updateGradInput(ctx._backend.library_state,
+#                                             grad_output,
+#                                             grad_input,
+#                                             ctx.input_size[0], ctx.input_size[1],
+#                                             ctx.kernel_size[0], ctx.kernel_size[1],
+#                                             ctx.dilation[0], ctx.dilation[1],
+#                                             ctx.padding[0], ctx.padding[1],
+#                                             ctx.stride[0], ctx.stride[1])
+#         return grad_input, None, None, None, None
+#
+#
+# def assert_int_or_pair(arg, arg_name, message):
+#     assert isinstance(arg, int) or len(arg) == 2, message.format(arg_name)
 
 
-def unfold(input, kernel_size, dilation=1, padding=0, stride=1):
-    r"""
-    See :class:`torch.nn.Unfold` for details
-    """
+# def unfold(input, kernel_size, dilation=1, padding=0, stride=1):
+#     r"""
+#     See :class:`torch.nn.Unfold` for details
+#     """
+#
+#     if input is not None and input.dim() == 4:
+#         msg = '{} must be int or 2-tuple for 4D input'
+#         assert_int_or_pair(kernel_size, 'kernel_size', msg)
+#         assert_int_or_pair(dilation, 'dilation', msg)
+#         assert_int_or_pair(padding, 'padding', msg)
+#         assert_int_or_pair(stride, 'stride', msg)
+#
+#         return Im2Col.apply(input, _pair(kernel_size),
+#                             _pair(dilation), _pair(padding), _pair(stride))
+#     else:
+#         raise NotImplementedError("Input Error: Only 4D input Tensors supported (got {}D)".format(input.dim()))
 
-    if input is not None and input.dim() == 4:
-        msg = '{} must be int or 2-tuple for 4D input'
-        assert_int_or_pair(kernel_size, 'kernel_size', msg)
-        assert_int_or_pair(dilation, 'dilation', msg)
-        assert_int_or_pair(padding, 'padding', msg)
-        assert_int_or_pair(stride, 'stride', msg)
 
-        return Im2Col.apply(input, _pair(kernel_size),
-                            _pair(dilation), _pair(padding), _pair(stride))
-    else:
-        raise NotImplementedError("Input Error: Only 4D input Tensors supported (got {}D)".format(input.dim()))
-
-import ipdb
 def conv2d_local(input, weight, bias=None, padding=0, stride=1, dilation=1):
     """Calculate the local convolution.
 
