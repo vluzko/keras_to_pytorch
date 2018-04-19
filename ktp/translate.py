@@ -70,10 +70,11 @@ def translate_1d_locally_connected(layer: keras.layers.LocallyConnected1D) -> Tu
     )
 
     expected_shape = pt_local_conv.weight.shape
-    reshaped = Parameter(torch.from_numpy(swapped.reshape(expected_shape)))
-    pt_local_conv.weight = reshaped
+    reshaped_weights = Parameter(torch.from_numpy(swapped.reshape(expected_shape)))
+    pt_local_conv.weight = reshaped_weights
+    reshaped_bias = bias_weights.reshape(pt_local_conv.bias.shape)
+    pt_local_conv.bias = Parameter(torch.from_numpy(reshaped_bias))
 
     activation = translate_activation(layer.activation)
 
-    ipdb.set_trace()
     return pt_local_conv, activation

@@ -4,7 +4,7 @@ import keras
 import torch
 from torch.autograd import Variable
 
-from ktp import locally_connected, layers
+from ktp import locally_connected, translate
 
 import ipdb
 import pytest
@@ -59,7 +59,7 @@ def test_flattened_2d_local():
 
     model = keras.Sequential()
     model.add(keras.layers.LocallyConnected1D(filters, kernel_size, input_shape=input1_shape))
-    pt = layers.translate_1d_locally_connected(model.layers[0])
+    pt, _ = translate.translate_1d_locally_connected(model.layers[0])
 
     x = np.zeros(input1_shape, dtype=np.float32)
     input1 = x.reshape((1, input_height, in_channels))

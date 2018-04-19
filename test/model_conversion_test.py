@@ -3,11 +3,14 @@ import keras
 import json
 import pandas as pd
 import numpy as np
+
+import torch
+
 import ipdb
 
 from pathlib import Path
 
-from ktp import layers, models
+from ktp import translate, models
 
 test_dir = Path("./test")
 data_dir = test_dir / Path("mhcflurry_data")
@@ -27,6 +30,7 @@ def test_mhcflurry_models():
     network_str = model_json['network_json']
     model = keras.models.model_from_json(network_str)
     model.set_weights(weights)
-    pt_local = layers.translate_1d_locally_connected(model.layers[1])
-    # pt_dense = layers.translate_fully_connected(model.layers[3])
+    pt_local, local_act = translate.translate_1d_locally_connected(model.layers[1])
+    pt_dense1, dense_act1 = translate.translate_fully_connected(model.layers[3])
+    pt_dense2, dense_act2 = translate.translate_fully_connected(model.layers[4])
     ipdb.set_trace()
