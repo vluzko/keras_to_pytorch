@@ -4,6 +4,8 @@ from torch import nn
 from torch.nn import functional as F
 import json
 from typing import NamedTuple, Tuple
+
+from ktp import translate
 import ipdb
 
 class_key = 'class_name'
@@ -19,24 +21,25 @@ class MHCFlurryNet(nn.Module):
 
     Attributes:
         layers (nn.ModuleList): The modules layers.
-        transformations (List[Callable]): The modules transformations.
+        activations (List[Callable]): The modules activations.
     """
     input_size = (15, 21)
     total_input_size = 15 * 21
 
-    def __init__(self, allele: str, layers, transformations):
+    def __init__(self, allele: str, layers, activations):
         super().__init__()
-        self.layers = layers
-        self.transformations = transformations
+        self.layers = nn.ModuleList(layers)
+        self.activations = activations
         # Input layer
         # Locally connected layer
 
-    def forward(self, x):
-        """Run the network."""
-        for layer, transformation in zip(self.layers, self.transformations):
-            x = layer(x)
-            x = transformation(x)
-        return x
+    def forward(self, *input):
+        raise NotImplementedError
+
+    @classmethod
+    def from_model(cls, allele: str, model):
+        """Create a net from a keras model."""
+        raise NotImplementedError
 
     @staticmethod
     def layer_sizes(json_string: str):
@@ -73,7 +76,7 @@ class MHCFlurryNet(nn.Module):
         return tuple(x['class_name'] for x in layers)
 
     @staticmethod
-    def layers(json_string):
+    def layer_strings(json_string):
         network = MHCFlurryNet.network(json_string)
         layers = network['config']['layers']
         return layers
@@ -97,16 +100,17 @@ class NoLocal(MHCFlurryNet):
 
     architecture = ('InputLayer', 'Flatten', 'Dense', 'Dense')
 
-    def __init__(self, allele: str, first_linear_out: int,):
-        self.first_linear = nn.Linear(self.total_input_size, first_linear_out)
-        self.second_linear = nn.Linear(first_linear_out, 1)
+    def forward(self, input):
+        output = input.view(tuple(self.layers.size()))
+        for layer, act in zip(self.layers, self.activations):
+            output = act(layer(output))
+        return output
 
-        self.first_transformation = F.tanh
-        self.second_transformation = F.sigmoid
-
-        layers = nn.ModuleList([self.first_linear, self.second_linear])
-        transformations = (self.first_transformation, self.second_transformation)
-        super().__init__(allele, layers, transformations)
+    @classmethod
+    def from_model(cls, allele: str, model):
+        dense1, act1 = translate.translate_fully_connected(model.layers[2])
+        dense2, act2 = translate.translate_fully_connected(model.layers[3])
+        return NoLocal(allele, [dense1, dense2], [act1, act2])
 
     @staticmethod
     def load_from_json(json_string: str):
@@ -118,16 +122,21 @@ class OneLocal(MHCFlurryNet):
 
     architecture = ('InputLayer', 'LocallyConnected1D', 'Flatten', 'Dense', 'Dense')
 
-    def __init__(self, allele: str, first_linear_output: int):
+    def forward(self, input: torch.Tensor):
+        output = input
+        for layer, act in zip(self.layers[:1], self.activations[:1]):
+            output = act(layer(output))
+        output = output.view(tuple(self.layers[1].size()))
+        for layer, act in zip(self.layers[1:], self.activations[1:]):
+            output = act(layer(output))
+        return output
 
-        self.first_linear_layer = nn.Linear(0, first_linear_output)
-        self.second_linear_layer = nn.Linear(first_linear_output, 1)
-
-        self.first_linear_trans = F.tanh
-        self.second_linear_trans = F.sigmoid
-
-        super().__init__(allele, (), ())
-        raise NotImplementedError
+    @classmethod
+    def from_model(cls, allele: str, model):
+        local1, act1 = translate.translate_1d_locally_connected(model.layers[1])
+        dense1, act2 = translate.translate_fully_connected(model.layers[2])
+        dense2, act3 = translate.translate_fully_connected(model.layers[3])
+        return OneLocal(allele, [local1, dense1, dense2], [act1, act2, act3])
 
     @staticmethod
     def load_from_json(json_string: str):
@@ -139,16 +148,22 @@ class TwoLocal(MHCFlurryNet):
 
     architecture = ('InputLayer', 'LocallyConnected1D', 'LocallyConnected1D', 'Flatten', 'Dense', 'Dense')
 
-    def __init__(self, allele: str, first_linear_output: int):
+    def forward(self, input: torch.Tensor):
+        output = input
+        for layer, act in zip(self.layers[:2], self.activations[:2]):
+            output = act(layer(output))
+        output = output.view(tuple(self.layers[2].size()))
+        for layer, act in zip(self.layers[2:], self.activations[2:]):
+            output = act(layer(output))
+        return output
 
-        self.first_linear_layer = nn.Linear(0, first_linear_output)
-        self.second_linear_layer = nn.Linear(first_linear_output, 1)
-
-        self.first_linear_trans = F.tanh
-        self.second_linear_trans = F.sigmoid
-
-        super().__init__(allele, (), ())
-        raise NotImplementedError
+    @classmethod
+    def from_model(cls, allele: str, model):
+        local1, act1 = translate.translate_1d_locally_connected(model.layers[1])
+        local2, act2 = translate.translate_1d_locally_connected(model.layers[2])
+        dense1, act3 = translate.translate_fully_connected(model.layers[3])
+        dense2, act4 = translate.translate_fully_connected(model.layers[4])
+        return OneLocal(allele, [local1, local2, dense1, dense2], [act1, act2, act3, act4])
 
     @staticmethod
     def load_from_json(json_string: str):
