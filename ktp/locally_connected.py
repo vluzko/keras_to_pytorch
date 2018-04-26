@@ -113,7 +113,7 @@ from torch._thnn import type2backend
 #     else:
 #         raise NotImplementedError("Input Error: Only 4D input Tensors supported (got {}D)".format(input.dim()))
 
-
+import ipdb
 def conv2d_local(input, weight, bias=None, padding=0, stride=1, dilation=1):
     """Calculate the local convolution.
 
@@ -146,6 +146,9 @@ def conv2d_local(input, weight, bias=None, padding=0, stride=1, dilation=1):
     input_size = in_channels * kernel_height * kernel_width
     weights_view = weight.view(output_size, out_channels, input_size)
     permuted_weights = weights_view.permute(0, 2, 1)
+    # ipdb.set_trace()
+    print(cols2)
+    print(permuted_weights)
     out = torch.matmul(cols2, permuted_weights)
     out = out.view(cols2.size(0), out_height, out_width, out_channels).permute(0, 3, 1, 2)
 

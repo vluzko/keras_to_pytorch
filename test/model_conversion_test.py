@@ -10,7 +10,7 @@ import ipdb
 
 from pathlib import Path
 
-from ktp import translate, models
+from ktp import translate, models, mhcflurry_model
 
 test_dir = Path("./test")
 data_dir = test_dir / Path("mhcflurry_data")
@@ -34,3 +34,7 @@ def test_mhcflurry_models():
     pt_dense1, dense_act1 = translate.translate_fully_connected(model.layers[3])
     pt_dense2, dense_act2 = translate.translate_fully_connected(model.layers[4])
     ipdb.set_trace()
+
+
+def test_predict():
+    ensemble = mhcflurry_model.make_prediction("HLA-A*01:01", "SIINFEKL")

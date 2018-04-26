@@ -1,14 +1,29 @@
 """MHCFlurry in PyTorch."""
-import torch
-from torch import nn
-from torch.nn import functional as F
 import json
+import keras
+import collections
+import math
+import numpy as np
+import pandas as pd
+
+from copy import copy
+from io import StringIO
 from typing import NamedTuple, Tuple
+from pathlib import Path
+from functools import reduce
+
+import torch
+from torch import nn, Tensor
+from torch.nn import functional as F
 
 from ktp import translate
 import ipdb
 
 class_key = 'class_name'
+test_dir = Path("./test")
+data_dir = test_dir / Path("mhcflurry_data")
+weights_dir = data_dir / Path("weights")
+manifest_path = data_dir / Path("manifest.csv")
 
 
 class MHCFlurryNet(nn.Module):
@@ -28,71 +43,18 @@ class MHCFlurryNet(nn.Module):
 
     def __init__(self, allele: str, layers, activations):
         super().__init__()
+        self.allele = allele
         self.layers = nn.ModuleList(layers)
         self.activations = activations
-        # Input layer
-        # Locally connected layer
 
-    def forward(self, *input):
+    def forward(self, input):
+        """Feed forward."""
         raise NotImplementedError
 
     @classmethod
     def from_model(cls, allele: str, model):
         """Create a net from a keras model."""
         raise NotImplementedError
-
-    @staticmethod
-    def layer_sizes(json_string: str):
-        layers = MHCFlurryNet.layers(json_string)
-        sizes = []
-        for layer in layers:
-            layer_class = layer['class_name']
-            if layer_class == "InputLayer":
-                size = input_layer_size(layer)
-            elif layer_class == "LocallyConnected1D":
-                size = locally_connected_layer_size(layer)
-            elif layer_class == "Flatten":
-                size = flatten_layer_size(layer)
-            elif layer_class == "Dense":
-                size = dense_layer_size(layer)
-            sizes.append(size)
-        return tuple(sizes)
-
-    @staticmethod
-    def load_from_json(json_string: str):
-        """Load a model and its weights.
-
-        Args:
-            json_string:
-
-        Returns:
-
-        """
-        raise NotImplementedError
-
-    @staticmethod
-    def layer_names(json_string: str):
-        layers = MHCFlurryNet.layers(json_string)
-        return tuple(x['class_name'] for x in layers)
-
-    @staticmethod
-    def layer_strings(json_string):
-        network = MHCFlurryNet.network(json_string)
-        layers = network['config']['layers']
-        return layers
-
-    @staticmethod
-    def network(json_string):
-        json_dict = MHCFlurryNet.from_mhcflurry_json(json_string)
-        return json.loads(json_dict['network_json'])
-
-    @staticmethod
-    def from_mhcflurry_json(json_string: str):
-        """Read a model from MHCflurry"""
-        json_dict = json.loads(json_string)
-        network = json.loads(json_dict['network_json'])
-        layers = network['config']['layers']
-        return json_dict
 
 
 class NoLocal(MHCFlurryNet):
@@ -112,10 +74,6 @@ class NoLocal(MHCFlurryNet):
         dense2, act2 = translate.translate_fully_connected(model.layers[3])
         return NoLocal(allele, [dense1, dense2], [act1, act2])
 
-    @staticmethod
-    def load_from_json(json_string: str):
-        raise NotImplementedError
-
 
 class OneLocal(MHCFlurryNet):
     """A MHCFlurry model with one locally connected layer."""
@@ -126,7 +84,7 @@ class OneLocal(MHCFlurryNet):
         output = input
         for layer, act in zip(self.layers[:1], self.activations[:1]):
             output = act(layer(output))
-        output = output.view(tuple(self.layers[1].size()))
+        output = output.view(-1)
         for layer, act in zip(self.layers[1:], self.activations[1:]):
             output = act(layer(output))
         return output
@@ -134,13 +92,9 @@ class OneLocal(MHCFlurryNet):
     @classmethod
     def from_model(cls, allele: str, model):
         local1, act1 = translate.translate_1d_locally_connected(model.layers[1])
-        dense1, act2 = translate.translate_fully_connected(model.layers[2])
-        dense2, act3 = translate.translate_fully_connected(model.layers[3])
+        dense1, act2 = translate.translate_fully_connected(model.layers[3])
+        dense2, act3 = translate.translate_fully_connected(model.layers[4])
         return OneLocal(allele, [local1, dense1, dense2], [act1, act2, act3])
-
-    @staticmethod
-    def load_from_json(json_string: str):
-        raise NotImplementedError
 
 
 class TwoLocal(MHCFlurryNet):
@@ -149,10 +103,11 @@ class TwoLocal(MHCFlurryNet):
     architecture = ('InputLayer', 'LocallyConnected1D', 'LocallyConnected1D', 'Flatten', 'Dense', 'Dense')
 
     def forward(self, input: torch.Tensor):
+        """Two locally connected layers, then two dense layers."""
         output = input
         for layer, act in zip(self.layers[:2], self.activations[:2]):
             output = act(layer(output))
-        output = output.view(tuple(self.layers[2].size()))
+        output = output.view(-1)
         for layer, act in zip(self.layers[2:], self.activations[2:]):
             output = act(layer(output))
         return output
@@ -161,126 +116,340 @@ class TwoLocal(MHCFlurryNet):
     def from_model(cls, allele: str, model):
         local1, act1 = translate.translate_1d_locally_connected(model.layers[1])
         local2, act2 = translate.translate_1d_locally_connected(model.layers[2])
-        dense1, act3 = translate.translate_fully_connected(model.layers[3])
-        dense2, act4 = translate.translate_fully_connected(model.layers[4])
+        dense1, act3 = translate.translate_fully_connected(model.layers[4])
+        dense2, act4 = translate.translate_fully_connected(model.layers[5])
         return OneLocal(allele, [local1, local2, dense1, dense2], [act1, act2, act3, act4])
 
-    @staticmethod
-    def load_from_json(json_string: str):
-        raise NotImplementedError
 
-
-class MHCFlurryEnsemble(object):
+class MHCFlurryEnsemble(nn.Module):
     """An ensemble of (usually eight) MHCFlurry nets.
 
     Attributes:
     """
 
-    def __init__(self, allele, models: Tuple[MHCFlurryNet]):
-        pass
+    def __init__(self, allele, models: Tuple[MHCFlurryNet, ...]):
+        super().__init__()
+        self.allele = allele
+        self.models = nn.ModuleList(models)
+        self.exp = 1 / len(self.models)
 
-    @staticmethod
-    def load_all(allele: str):
-        """Create all the"""
-        pass
+    def forward(self, input):
+        """Compute the geometric mean of the outputs of the individual models."""
+        outputs = (x(input) for x in self.models)
+        prod = reduce(lambda a, b: a * b, outputs, 1)
+        return torch.pow(prod, self.exp)
 
-
-def from_json(json_string: str):
-    layer_names = MHCFlurryNet.layer_names(json_string)
-
-    if layer_names == NoLocal.architecture:
-        return NoLocal.load_from_json(json_string)
-    elif layer_names == OneLocal.architecture:
-        return OneLocal.load_from_json(json_string)
-    elif layer_names == TwoLocal.architecture:
-        return TwoLocal.load_from_json(json_string)
-    else:
-        assert False
-
-
-class Kernel(NamedTuple):
-    class_name: str
-    scale: int
-    reg: tuple
+    @classmethod
+    def ensemble_from_rows(cls, model_rows: pd.DataFrame):
+        """Create an ensemble model from the dataframe.
+        Does not check that all rows define models for the same allele.
+        """
+        allele = model_rows['allele'].unique()[0]
+        models = tuple(row_to_net(row)[0] for _, row in model_rows.iterrows())
+        return cls(allele, models)
 
 
-def kernel_keys(layer_config: dict):
-    init = layer_config['kernel_initializer']
-    reg = layer_config['kernel_regularizer']
-    if reg is None:
-        kern_reg = None
-    else:
-        kern_reg = (
-            reg[class_key],
-            reg['config']['l1'],
-            reg['config']['l2']
+def row_to_net(row: pd.Series) -> Tuple[MHCFlurryNet, keras.Model]:
+    """Convert a row of the manifest to a PyTorch model and a keras model"""
+    name = row["model_name"]
+    allele = row["allele"]
+    weights_path = weights_dir / Path("weights_{}.npz".format(name))
+    weights_np = np.load(str(weights_path))
+    weights = [weights_np["array_{}".format(i)] for i, _ in enumerate(weights_np)]
+    weights_np.close()
+    model_json = json.loads(row["config_json"])
+    network_str = model_json['network_json']
+    keras_model = keras.models.model_from_json(network_str)
+    keras_model.set_weights(weights)
+
+    cls = model_architecture(network_str)
+    pytorch_model = cls.from_model(allele, keras_model)
+    return pytorch_model, keras_model
+
+
+def model_architecture(network_json_string: str) -> type(MHCFlurryNet):
+    """Get the sequence of layers in the network."""
+    network_json = json.loads(network_json_string)
+    layer_json = network_json["config"]["layers"]
+    layer_names = tuple(x["class_name"] for x in layer_json)
+    return architecture_maps[layer_names]
+
+
+def make_prediction(allele: str, peptide: str) -> float:
+    """Predict the binding affinity of the given allele and peptide.
+    Uses an ensemble of all stored models for that allele.
+    """
+    manifest = pd.read_csv(str(manifest_path))
+    relevant_rows = manifest[manifest['allele'] == allele]
+    ensemble = MHCFlurryEnsemble.ensemble_from_rows(relevant_rows)
+    encoded_peptide = peptides_to_network_input((peptide,), encoding="BLOSUM62")
+    return ensemble(torch.FloatTensor(encoded_peptide.reshape((1, 21, 15, 1))))
+
+
+def peptides_to_network_input(peptides: Tuple[str, ...], encoding: str, kmer_size: int=15) -> np.ndarray:
+    """Encode peptides to the fixed-length encoding expected by the neural network (which depends on the architecture).
+
+    Args:
+        peptides: tuple of peptide strings
+        encoding: The way to encode the peptides.
+        kmer_size: The size of the network input.
+
+
+    Returns:
+        numpy array of encoded peptides.
+    """
+    seq_array = np.array(peptides)
+    if encoding == "embedding":
+        encoded = variable_length_to_fixed_length_categorical(
+            seq_array,
+            max_length=kmer_size,
+            left_edge=4,
+            right_edge=4
         )
-    assert init['config']['distribution'] == "uniform"
-    assert layer_config['kernel_constraint'] is None
-    return Kernel(
-        init[class_key],
-        init['config']['scale'],
-        kern_reg
-    )
+    elif encoding in ENCODING_DATA_FRAMES.keys():
+        encoded = variable_length_to_fixed_length_vector_encoding(
+            seq_array,
+            encoding,
+            max_length=kmer_size,
+            left_edge=4,
+            right_edge=4,
+        )
+    else:
+        raise ValueError("Unsupported peptide_amino_acid_encoding: {}".format(encoding))
+    assert len(encoded) == len(peptides)
+    return encoded
 
 
-def bias_keys(layer_config: dict):
-    init = layer_config['bias_initializer']
-    assert init['class_name'] == 'Zeros'
-    assert layer_config['bias_regularizer'] is None
-    assert layer_config['bias_constraint'] is None
-    return (
-        'Zeros',
-    )
+def variable_length_to_fixed_length_categorical(sequences, left_edge=4, right_edge=4, max_length=15):
+    """
+    Encode variable-length sequences using a fixed-length encoding designed
+    for preserving the anchor positions of class I peptides.
+
+    The sequences must be of length at least left_edge + right_edge, and at
+    most max_length.
+
+    Parameters
+    ----------
+    left_edge : int, size of fixed-position left side
+    right_edge : int, size of the fixed-position right side
+    max_length : sequence length of the resulting encoding
+
+    Returns
+    -------
+    numpy.array of integers with shape (num sequences, max_length)
+    """
+
+    fixed_length_sequences = sequences_to_fixed_length_index_encoded_array(
+        sequences,
+        left_edge=left_edge,
+        right_edge=right_edge,
+        max_length=max_length)
+    return fixed_length_sequences
 
 
-def input_layer_size(layer: dict):
-    columns = ["input_size"]
-    return tuple(layer['config']['batch_input_shape'])
+def variable_length_to_fixed_length_vector_encoding(sequences, vector_encoding_name, left_edge=4, right_edge=4, max_length=15):
+    """
+    Encode variable-length sequences using a fixed-length encoding designed
+    for preserving the anchor positions of class I peptides.
+
+    The sequences must be of length at least left_edge + right_edge, and at
+    most max_length.
+
+    Args:
+        sequences
+        vector_encoding_name : string
+            How to represent amino acids.
+            One of "BLOSUM62", "one-hot", etc. Full list of supported vector
+            encodings is given by available_vector_encodings().
+        left_edge : int, size of fixed-position left side
+        right_edge : int, size of the fixed-position right side
+        max_length : sequence length of the resulting encoding
+
+    Returns:
+        numpy.array with shape (num sequences, max_length, m) where m is a vector_encoding_length(vector_encoding_name)
+    """
+    fixed_length_sequences = sequences_to_fixed_length_index_encoded_array(
+        sequences,
+        left_edge=left_edge,
+        right_edge=right_edge,
+        max_length=max_length)
+    result = fixed_vectors_encoding(fixed_length_sequences, ENCODING_DATA_FRAMES[vector_encoding_name])
+    assert result.shape[0] == len(sequences)
+    return result
 
 
-class LocallyConnectedLayer(NamedTuple):
-    filters: int
-    kernel_size: tuple
-    strides: tuple
-    activation: str
-    use_bias: bool
-    kernel: tuple
-    bias: tuple
+COMMON_AMINO_ACIDS = collections.OrderedDict(sorted({
+                                                        "A": "Alanine",
+                                                        "R": "Arginine",
+                                                        "N": "Asparagine",
+                                                        "D": "Aspartic Acid",
+                                                        "C": "Cysteine",
+                                                        "E": "Glutamic Acid",
+                                                        "Q": "Glutamine",
+                                                        "G": "Glycine",
+                                                        "H": "Histidine",
+                                                        "I": "Isoleucine",
+                                                        "L": "Leucine",
+                                                        "K": "Lysine",
+                                                        "M": "Methionine",
+                                                        "F": "Phenylalanine",
+                                                        "P": "Proline",
+                                                        "S": "Serine",
+                                                        "T": "Threonine",
+                                                        "W": "Tryptophan",
+                                                        "Y": "Tyrosine",
+                                                        "V": "Valine",
+                                                    }.items()))
+COMMON_AMINO_ACIDS_WITH_UNKNOWN = copy(COMMON_AMINO_ACIDS)
+COMMON_AMINO_ACIDS_WITH_UNKNOWN["X"] = "Unknown"
+
+AMINO_ACID_INDEX = dict(
+    (letter, i) for (i, letter) in enumerate(COMMON_AMINO_ACIDS_WITH_UNKNOWN))
+
+AMINO_ACIDS = list(COMMON_AMINO_ACIDS_WITH_UNKNOWN.keys())
+
+BLOSUM62_MATRIX = pd.read_table(StringIO("""
+   A  R  N  D  C  Q  E  G  H  I  L  K  M  F  P  S  T  W  Y  V  X
+A  4 -1 -2 -2  0 -1 -1  0 -2 -1 -1 -1 -1 -2 -1  1  0 -3 -2  0  0
+R -1  5  0 -2 -3  1  0 -2  0 -3 -2  2 -1 -3 -2 -1 -1 -3 -2 -3  0
+N -2  0  6  1 -3  0  0  0  1 -3 -3  0 -2 -3 -2  1  0 -4 -2 -3  0
+D -2 -2  1  6 -3  0  2 -1 -1 -3 -4 -1 -3 -3 -1  0 -1 -4 -3 -3  0
+C  0 -3 -3 -3  9 -3 -4 -3 -3 -1 -1 -3 -1 -2 -3 -1 -1 -2 -2 -1  0
+Q -1  1  0  0 -3  5  2 -2  0 -3 -2  1  0 -3 -1  0 -1 -2 -1 -2  0
+E -1  0  0  2 -4  2  5 -2  0 -3 -3  1 -2 -3 -1  0 -1 -3 -2 -2  0
+G  0 -2  0 -1 -3 -2 -2  6 -2 -4 -4 -2 -3 -3 -2  0 -2 -2 -3 -3  0
+H -2  0  1 -1 -3  0  0 -2  8 -3 -3 -1 -2 -1 -2 -1 -2 -2  2 -3  0
+I -1 -3 -3 -3 -1 -3 -3 -4 -3  4  2 -3  1  0 -3 -2 -1 -3 -1  3  0
+L -1 -2 -3 -4 -1 -2 -3 -4 -3  2  4 -2  2  0 -3 -2 -1 -2 -1  1  0
+K -1  2  0 -1 -3  1  1 -2 -1 -3 -2  5 -1 -3 -1  0 -1 -3 -2 -2  0
+M -1 -1 -2 -3 -1  0 -2 -3 -2  1  2 -1  5  0 -2 -1 -1 -1 -1  1  0
+F -2 -3 -3 -3 -2 -3 -3 -3 -1  0  0 -3  0  6 -4 -2 -2  1  3 -1  0
+P -1 -2 -2 -1 -3 -1 -1 -2 -2 -3 -3 -1 -2 -4  7 -1 -1 -4 -3 -2  0
+S  1 -1  1  0 -1  0  0  0 -1 -2 -2  0 -1 -2 -1  4  1 -3 -2 -2  0
+T  0 -1  0 -1 -1 -1 -1 -2 -2 -1 -1 -1 -1 -2 -1  1  5 -2 -2  0  0 
+W -3 -3 -4 -4 -2 -2 -3 -2 -2 -3 -2 -3 -1  1 -4 -3 -2 11  2 -3  0
+Y -2 -2 -2 -3 -2 -1 -2 -3  2 -1 -1 -2 -1  3 -3 -2 -2  2  7 -1  0
+V  0 -3 -3 -3 -1 -2 -2 -3 -3  3  1 -2  1 -1 -2 -2  0 -3 -1  4  0
+X  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  1
+"""), sep='\s+').loc[AMINO_ACIDS, AMINO_ACIDS]
+assert (BLOSUM62_MATRIX == BLOSUM62_MATRIX.T).all().all()
+
+ENCODING_DATA_FRAMES = {
+    "BLOSUM62": BLOSUM62_MATRIX,
+    "one-hot": pd.DataFrame([
+        [1 if i == j else 0 for i in range(len(AMINO_ACIDS))]
+        for j in range(len(AMINO_ACIDS))
+    ], index=AMINO_ACIDS, columns=AMINO_ACIDS)
+}
 
 
-def locally_connected_layer_size(layer: dict):
-    config = layer['config']
-    assert config['activity_regularizer'] is None
-    return LocallyConnectedLayer(
-        config['filters'],
-        tuple(config['kernel_size']),
-        tuple(config['strides']),
-        config['activation'],
-        config['use_bias'],
-        kernel_keys(config),
-        bias_keys(config)
-    )
+def sequences_to_fixed_length_index_encoded_array(sequences, left_edge=4, right_edge=4, max_length=15) -> np.ndarray:
+    """
+    Transform a sequence of strings, where each string is of length at least
+    left_edge + right_edge and at most max_length into strings of length
+    max_length using a scheme designed to preserve the anchor positions of
+    class I peptides.
+
+    The first left_edge characters in the input always map to the first
+    left_edge characters in the output. Similarly for the last right_edge
+    characters. The middle characters are filled in based on the length,
+    with the X character filling in the blanks.
+
+    For example, using defaults:
+
+    AAAACDDDD -> AAAAXXXCXXXDDDD
+
+    The strings are also converted to int categorical amino acid indices.
+
+    Args:
+        sequences : string
+        left_edge : int
+        right_edge : int
+        max_length : int
+
+    Returns:
+        numpy array of shape (len(sequences), max_length) and dtype int
+    """
+
+    # Result array is int32, filled with X (null amino acid) value.
+    result = np.full(
+        fill_value=AMINO_ACID_INDEX['X'],
+        shape=(len(sequences), max_length),
+        dtype="int32")
+
+    df = pd.DataFrame({"peptide": sequences})
+    df["length"] = df.peptide.str.len()
+
+    middle_length = max_length - left_edge - right_edge
+
+    # For efficiency we handle each supported peptide length using bulk
+    # array operations.
+    for (length, sub_df) in df.groupby("length"):
+        if length < left_edge + right_edge:
+            raise ValueError(
+                "Sequence '%s' (length %d) unsupported: length must be at "
+                "least %d. There are %d total peptides with this length." % (
+                    sub_df.iloc[0].peptide, length, left_edge + right_edge,
+                    len(sub_df))
+            )
+        elif length > max_length:
+            raise ValueError(
+                "Sequence '%s' (length %d) unsupported: length must be at "
+                "most %d. There are %d total peptides with this length." % (
+                    sub_df.iloc[0].peptide, length, max_length,
+                    len(sub_df))
+            )
+
+        # Array of shape (num peptides, length) giving fixed-length amino
+        # acid encoding each peptide of the current length.
+        fixed_length_sequences = np.stack(
+            sub_df.peptide.map(
+                lambda s: np.array([
+                    AMINO_ACID_INDEX[char] for char in s
+                ])).values)
+
+        num_null = max_length - length
+        num_null_left = int(math.ceil(num_null / 2))
+        num_middle_filled = middle_length - num_null
+        middle_start = left_edge + num_null_left
+
+        # Set left edge
+        result[sub_df.index, :left_edge] = fixed_length_sequences[:, :left_edge]
+
+        # Set middle.
+        result[sub_df.index, middle_start: middle_start + num_middle_filled] = fixed_length_sequences[:, left_edge: left_edge + num_middle_filled]
+
+        # Set right edge.
+        result[sub_df.index, -right_edge:] = fixed_length_sequences[:, -right_edge:]
+    return result
 
 
-def flatten_layer_size(layer: dict):
-    return ()
+def fixed_vectors_encoding(index_encoded_sequences, letter_to_vector_df):
+    """
+    Given a `n` x `k` matrix of integers such as that returned by `index_encoding()` and
+    a dataframe mapping each index to an arbitrary vector, return a `n * k * m`
+    array where the (`i`, `j`)'th element is `letter_to_vector_df.iloc[sequence[i][j]]`.
+
+    The dataframe index and columns names are ignored here; the indexing is done
+    entirely by integer position in the dataframe.
+
+    Parameters
+    ----------
+    index_encoded_sequences : `n` x `k` array of integers
+
+    letter_to_vector_df : pandas.DataFrame of shape (`alphabet size`, `m`)
+
+    Returns
+    -------
+    numpy.array of integers with shape (`n`, `k`, `m`)
+    """
+    (num_sequences, sequence_length) = index_encoded_sequences.shape
+    target_shape = (
+        num_sequences, sequence_length, letter_to_vector_df.shape[0])
+    result = letter_to_vector_df.iloc[
+        index_encoded_sequences.flatten()
+    ].values.reshape(target_shape)
+    return result
 
 
-class DenseLayer(NamedTuple):
-    units: int
-    activation: str
-    use_bias: bool
-    kernel: tuple
-    bias: tuple
-
-
-def dense_layer_size(layer: dict):
-    config = layer['config']
-    return DenseLayer(
-        config['units'],
-        config['activation'],
-        config['use_bias'],
-        kernel_keys(config),
-        bias_keys(config)
-    )
+architecture_maps = {x.architecture: x for x in (NoLocal, OneLocal, TwoLocal)}
