@@ -2,7 +2,7 @@
 import keras
 import torch
 
-from ktp import layers, regularizers, initializers
+from ktp import translate, regularizers, initializers
 
 
 def input_layer(layer):
