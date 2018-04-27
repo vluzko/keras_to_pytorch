@@ -59,8 +59,6 @@ def translate_1d_locally_connected(layer: keras.layers.LocallyConnected1D) -> Tu
     stride = layer.strides[0]
     kernel_weights, bias_weights = layer.get_weights()
 
-    swapped: np.ndarray = kernel_weights.swapaxes(1, 2)
-
     pt_local_conv = locally_connected.Conv2dLocal(
         in_height=input_height,
         in_width=1,
@@ -71,9 +69,44 @@ def translate_1d_locally_connected(layer: keras.layers.LocallyConnected1D) -> Tu
         bias=layer.use_bias
     )
 
-    expected_shape = pt_local_conv.weight.shape
-    reshaped_weights = Parameter(torch.FloatTensor(swapped.reshape(expected_shape)))
-    pt_local_conv.weight = reshaped_weights
+    k_shape = (pt_local_conv.out_height, pt_local_conv.out_width, kernel_size, 1, in_channels, filters)
+    reshaped = kernel_weights.reshape(k_shape)
+    as_tensor = torch.FloatTensor(reshaped)
+    permuted = as_tensor.permute((0, 1, 5, 4, 2, 3))
+    pt_local_conv.weight = torch.nn.Parameter(permuted.cuda())
+
+    reshaped_bias = bias_weights.reshape(pt_local_conv.bias.shape)
+    pt_local_conv.bias = Parameter(torch.FloatTensor(reshaped_bias))
+
+    activation = translate_activation(layer.activation)
+
+    return pt_local_conv, activation
+
+
+def translate_2d_locally_connected(layer: keras.layers.LocallyConnected2D) -> Tuple[torch.nn.Module, Callable]:
+    """Translate a 2-dimensional locally connected layer."""
+    input_width, input_height, in_channels = layer.input.shape.as_list()
+    _, _, filters = layer.output.shape.as_list()
+    kernel_height, kernel_width = layer.kernel_size
+    stride_height, stride_width = layer.strides
+    kernel_weights, bias_weights = layer.get_weights()
+
+    pt_local_conv = locally_connected.Conv2dLocal(
+        in_height=input_height,
+        in_width=input_width,
+        in_channels=in_channels,
+        out_channels=filters,
+        kernel_size=(kernel_height, kernel_width),
+        stride=(stride_height, stride_width),
+        bias=layer.use_bias
+    )
+
+    k_shape = (pt_local_conv.out_height, pt_local_conv.out_width, kernel_height, kernel_width, in_channels, filters)
+    reshaped = kernel_weights.reshape(k_shape)
+    as_tensor = torch.FloatTensor(reshaped)
+    permuted = as_tensor.permute((0, 1, 5, 4, 2, 3))
+    pt_local_conv.weight = torch.nn.Parameter(permuted.cuda())
+
     reshaped_bias = bias_weights.reshape(pt_local_conv.bias.shape)
     pt_local_conv.bias = Parameter(torch.FloatTensor(reshaped_bias))
 
