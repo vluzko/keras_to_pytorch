@@ -105,31 +105,33 @@ def test_compare_2d_local():
                                                       data_format="channels_first")
         model.add(keras_local)
         model.set_weights([weights])
-        pt = locally_connected.Conv2dLocal(
-            in_height=input_height,
-            in_width=input_width,
-            in_channels=in_channels,
-            out_channels=filters,
-            kernel_size=(kernel_height, kernel_width),
-            stride=(stride_y, stride_x),
-            bias=False
-        ).cuda()
+        # pt = locally_connected.Conv2dLocal(
+        #     in_height=input_height,
+        #     in_width=input_width,
+        #     in_channels=in_channels,
+        #     out_channels=filters,
+        #     kernel_size=(kernel_height, kernel_width),
+        #     stride=(stride_y, stride_x),
+        #     bias=False
+        # ).cuda()
 
-        k_weights = model.get_weights()[0]
+        # k_weights = model.get_weights()[0]
 
-        k_shape = (pt.out_height, pt.out_width, kernel_height, kernel_width, in_channels, filters)
-        reshaped = k_weights.reshape(k_shape)
-        as_tensor = torch.FloatTensor(reshaped)
-        permuted = as_tensor.permute((0, 1, 5, 4, 2, 3))
-        shape = (pt.out_height, pt.out_width, pt.out_channels, in_channels, kernel_height, kernel_width)
-        assert pt.out_height == keras_local.output_shape[2]
-        assert pt.out_width == keras_local.output_shape[3]
-        assert pt.out_channels == keras_local.output_shape[1] == filters
+        # k_shape = (pt.out_height, pt.out_width, kernel_height, kernel_width, in_channels, filters)
+        # reshaped = k_weights.reshape(k_shape)
+        # as_tensor = torch.FloatTensor(reshaped)
+        # permuted = as_tensor.permute((0, 1, 5, 4, 2, 3))
+        # shape = (pt.out_height, pt.out_width, pt.out_channels, in_channels, kernel_height, kernel_width)
+        # assert pt.out_height == keras_local.output_shape[2]
+        # assert pt.out_width == keras_local.output_shape[3]
+        # assert pt.out_channels == keras_local.output_shape[1] == filters
         # ipdb.set_trace()
-        pt.weight = torch.nn.Parameter(permuted.cuda())
+        # pt.weight = torch.nn.Parameter(permuted.cuda())
         # print("Pt init weight is: {}".format(pt.weight))
         # ipdb.set_trace()
         # pt.bias = torch.FloatTensor(k_bias.reshape(tuple(pt.bias)))
+
+        pt = translate.translate_2d_locally_connected(keras_local)[0].cuda()
 
         x = np.arange(0, 8).reshape((1, in_channels, input_height, input_width)).astype(np.float32)
         var = Variable(torch.from_numpy(x)).cuda()

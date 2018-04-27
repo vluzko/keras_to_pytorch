@@ -21,7 +21,6 @@ def conv2d_local(input, weight, bias=None, padding=0, stride=1, dilation=1):
     Returns:
 
     """
-    # ipdb.set_trace()
     if input.dim() != 4:
         raise NotImplementedError("Input Error: Only 4D input Tensors supported (got {}D)".format(input.dim()))
     if weight.dim() != 6:
@@ -48,7 +47,11 @@ def conv2d_local(input, weight, bias=None, padding=0, stride=1, dilation=1):
 
 
 class Conv2dLocal(Module):
-    """A 2D locally connected layer."""
+    """A 2D locally connected layer.
+
+    Attributes:
+        weight (torch.Tensor): The weights. out_height x out_width x out_channels x in_channels x kernel_height x kernel_width
+    """
 
     def __init__(self, in_height, in_width, in_channels, out_channels,
                  kernel_size, stride=1, padding=0, bias=True, dilation=1):
