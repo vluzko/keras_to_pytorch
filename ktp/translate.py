@@ -133,9 +133,12 @@ def translate_2d_locally_connected(layer: keras.layers.LocallyConnected2D) -> Tu
     """Translate a 2-dimensional locally connected layer."""
     # Extract various size and shape parameters
     if layer.data_format == "channels_first":
-        in_channels, input_width, input_height = layer.input.shape.as_list()[-3:]
+        in_channels, input_height, input_width = layer.input.shape.as_list()[-3:]
     elif layer.data_format == "channels_last":
-        input_width, input_height, in_channels = layer.input.shape.as_list()[-3:]
+        input_height, input_width, in_channels = layer.input.shape.as_list()[-3:]
+    else:
+        raise NotImplementedError
+
     _, _, filters = layer.output.shape.as_list()[-3:]
     kernel_height, kernel_width = layer.kernel_size
     stride_height, stride_width = layer.strides
