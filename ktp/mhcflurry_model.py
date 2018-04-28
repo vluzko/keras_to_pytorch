@@ -65,6 +65,7 @@ class NoLocal(MHCFlurryNet):
     def forward(self, input):
         output = input.view(tuple(self.layers.size()))
         for layer, act in zip(self.layers, self.activations):
+            # output = output.view
             output = act(layer(output))
         return output
 
