@@ -7,7 +7,6 @@ from torch.nn.modules.utils import _pair
 from torch.nn.functional import unfold
 
 
-import ipdb
 def conv2d_local(input, weight, bias=None, padding=0, stride=1, dilation=1):
     """Calculate the local convolution.
 
@@ -39,9 +38,6 @@ def conv2d_local(input, weight, bias=None, padding=0, stride=1, dilation=1):
     input_size = in_channels * kernel_height * kernel_width
     weights_view = weight.view(output_size, out_channels, input_size)
     permuted_weights = weights_view.permute(0, 2, 1)
-    print("Pytorch input: {}".format(cols2))
-    print("PyTorch weights: {}".format(permuted_weights))
-    # ipdb.set_trace()
     out = torch.matmul(cols2, permuted_weights)
     out = out.view(cols2.size(0), out_height, out_width, out_channels).permute(0, 3, 1, 2)
 

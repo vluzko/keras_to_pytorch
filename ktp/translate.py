@@ -105,7 +105,6 @@ def translate_1d_locally_connected(layer: keras.layers.LocallyConnected1D) -> Tu
 
     return pt_local_conv, activation
 
-import ipdb
 
 def translate_2d_locally_connected(layer: keras.layers.LocallyConnected2D) -> Tuple[nn.Module, Callable]:
     """Translate a 2-dimensional locally connected layer."""
@@ -131,7 +130,6 @@ def translate_2d_locally_connected(layer: keras.layers.LocallyConnected2D) -> Tu
         kernel_weights, bias_weights = keras_weights
     else:
         raise NotImplementedError("Expected keras_weights to be of length 1 or 2. Was: {}. Full weights: {}".format(len(keras_weights), keras_weights))
-    # ipdb.set_trace()
     pt_local_conv = locally_connected.Conv2dLocal(
         in_height=input_height,
         in_width=input_width,
@@ -142,13 +140,7 @@ def translate_2d_locally_connected(layer: keras.layers.LocallyConnected2D) -> Tu
         bias=layer.use_bias
     )
 
-    k_shape = (pt_local_conv.out_height, pt_local_conv.out_width, kernel_height, kernel_width, in_channels, filters)
     flat = torch.FloatTensor(kernel_weights.flatten())
-    # reshaped = kernel_weights.reshape(k_shape)
-    # as_tensor = torch.FloatTensor(reshaped)
-    # permuted = as_tensor.permute((0, 1, 5, 4, 2, 3)).contiguous()
-    # print(permuted)
-    # ipdb.set_trace()
     reshaped = flat.view(pt_local_conv.weight.shape)
     pt_local_conv.weight = nn.Parameter(reshaped)
 

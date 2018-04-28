@@ -85,14 +85,8 @@ def test_flattened_2d_local():
 
 
 # TODO: Copy weights between models.
-# @pytest.mark.skip()
 def test_compare_2d_local():
     for i in range(10):
-        input_height = 8
-        input_width = 6
-        in_channels = 4
-        kernel_height = 3
-        kernel_width = 2
         input_height = np.random.randint(2, 10)
         input_width = np.random.randint(2, 10)
         in_channels = np.random.randint(2, 10)
@@ -118,52 +112,7 @@ def test_compare_2d_local():
         var = Variable(torch.from_numpy(x)).cuda()
         k_res = model.predict(x)
         t_res = pt(var).cpu().data.numpy()
-        # assert (k_res == t_res).all()
-# (29,.,.) =
-# 696
-# 700
-# 704
-# 708
-# 712
-# 716
-# 697
-# 701
-# 705
-# 709
-# 713
-# 717
-# 698
-# 702
-# 706
-# 710
-# 714
-# 718
-# 699
-# 703
-# 707
-# 711
-# 715
-# 719
-
-# (5 ,4 ,0 ,0 ,.,.) =
-# 696  700
-# 704  708
-# 712  716
-#
-# (5 ,4 ,0 ,1 ,.,.) =
-# 697  701
-# 705  709
-# 713  717
-#
-# (5 ,4 ,0 ,2 ,.,.) =
-# 698  702
-# 706  710
-# 714  718
-#
-# (5 ,4 ,0 ,3 ,.,.) =
-# 699  703
-# 707  711
-# 715  719
+        assert (k_res == t_res).all()
 
 
 def test_compare_flattened_2d_and_1d():
