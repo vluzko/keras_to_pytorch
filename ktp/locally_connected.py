@@ -1,5 +1,7 @@
-# coding=utf-8
 import math
+
+from typing import Union, Tuple
+
 import torch
 from torch.nn.parameter import Parameter
 from torch.nn.modules.module import Module
@@ -46,6 +48,9 @@ def conv2d_local(input, weight, bias=None, padding=0, stride=1, dilation=1):
     return out
 
 
+Pairable = Union[int, Tuple[int, int]]
+
+
 class Conv2dLocal(Module):
     """A 2D locally connected layer.
 
@@ -53,8 +58,12 @@ class Conv2dLocal(Module):
         weight (torch.Tensor): The weights. out_height x out_width x out_channels x in_channels x kernel_height x kernel_width
     """
 
-    def __init__(self, in_height, in_width, in_channels, out_channels,
-                 kernel_size, stride=1, padding=0, bias=True, dilation=1):
+    def __init__(self, in_height: int, in_width: int, in_channels: int, out_channels: int,
+                 kernel_size: Pairable,
+                 stride: Pairable=1,
+                 padding: Pairable=0,
+                 bias: bool=True,
+                 dilation: Pairable=1):
         super(Conv2dLocal, self).__init__()
 
         self.in_channels = in_channels
@@ -83,6 +92,7 @@ class Conv2dLocal(Module):
         self.reset_parameters()
 
     def reset_parameters(self):
+        """Reset the parameters of the layer."""
         n = self.in_channels
         for k in self.kernel_size:
             n *= k
@@ -107,3 +117,19 @@ class Conv2dLocal(Module):
         return conv2d_local(
             input, self.weight, self.bias, stride=self.stride,
             padding=self.padding, dilation=self.dilation)
+
+
+class Conv1dLocal(Conv2dLocal):
+    """A 1-dimensional locally connected layer."""
+
+    def __init__(self, in_height, in_width, in_channels, out_channels,
+                 kernel_size, stride=1, padding=0, bias=True, dilation=1):
+        two_dimensional_kernel = (kernel_size, 1)
+        two_dimensional_stride = (stride, 1)
+        two_dimensional_padding = (padding, 0)
+        two_dimensional_dilation = (dilation, 1)
+        super().__init__(in_height, in_width, in_channels, out_channels, two_dimensional_kernel,
+                         stride=two_dimensional_stride,
+                         padding=two_dimensional_padding,
+                         bias=bias,
+                         dilation=two_dimensional_dilation)
