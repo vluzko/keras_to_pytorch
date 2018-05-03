@@ -33,7 +33,6 @@ def test_mhcflurry_models():
     pt_local, local_act = translate.translate_1d_locally_connected(model.layers[1])
     pt_dense1, dense_act1 = translate.translate_fully_connected(model.layers[3])
     pt_dense2, dense_act2 = translate.translate_fully_connected(model.layers[4])
-    ipdb.set_trace()
 
 
 def test_predict():
