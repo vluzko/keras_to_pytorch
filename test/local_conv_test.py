@@ -33,7 +33,7 @@ def test_dense_network():
 
 def test_compare_flattened_keras():
     """Compare a flattened (i.e. width = 1) 2D locally connected layer to a 1D locally connected layer."""
-    for i in range(10):
+    for i in range(1):
         input_height = np.random.randint(2, 10)
         in_channels = np.random.randint(1, 10)
         kernel_size = np.random.randint(1, input_height)
@@ -64,16 +64,76 @@ def test_compare_flattened_keras():
         keras_2d_input = keras_1d_input.reshape((1, input_height, 1, in_channels))
         keras_input = keras_2d_input.reshape((1, in_channels, input_height, 1)).astype(np.float32)
         torch_input = torch.Tensor(keras_input).cuda()
+
+        # keras_input = np.random.uniform(-10, 10, (1, in_channels, input_height, input_width)).astype(np.float32)
+        # kres = keras_model.predict(keras_input)
+        #
+        # torch_input = torch.Tensor(keras_input.copy()).cuda()
+        # tres = torch_model(torch_input).cpu().data.numpy()
+
         first_pred = keras_1d_model.predict(keras_1d_input)
         second_pred = keras_flattened_2d_model.predict(keras_2d_input)
-        t_res = torch_flattened_model(torch_input).cpu().data.numpy()
-        assert (first_pred.reshape(second_pred.shape) == second_pred == t_res).all()
+        tres = torch_flattened_model(torch_input).cpu().data.numpy()
+        assert (first_pred.reshape(second_pred.shape) == second_pred == tres).all()
+
+
+# TODO: Change to Hypothesis
+def test_compare_2d_local():
+    """Compare keras and PyTorch 2D locally connected layers on randomly generated values."""
+    for i in range(1):
+        data_format = np.random.choice(("channels_first", "channels_last"))
+        # data_format = "channels_last"
+        input_height = 2
+        input_width = 4
+        in_channels = 11
+        kernel_height = 1
+        kernel_width = 2
+        filters = 3
+
+        if data_format == "channels_last":
+            input_shape = (input_height, input_width, in_channels)
+        else:
+            input_shape = (in_channels, input_height, input_width)
+
+        # Create keras model
+        keras_model = keras.Sequential()
+        keras_local = keras.layers.LocallyConnected2D(filters, (kernel_height, kernel_width),
+                                                      use_bias=False,
+                                                      input_shape=input_shape,
+                                                      data_format=data_format)
+        keras_model.add(keras_local)
+
+        # Setup weights
+        weight_size = keras_local.kernel.shape.num_elements()
+        # weights = np.random.uniform(-10, 10, keras_local.kernel.shape.as_list())
+        weights = np.arange(weight_size).reshape(keras_local.kernel.shape.as_list())
+        keras_model.set_weights([weights])
+
+        # Translate keras to PyTorch model
+        torch_model = translate.translate_2d_locally_connected(keras_local)[0].cuda()
+
+        keras_input = np.arange(in_channels * input_width * input_height).reshape((1,) + input_shape).astype(np.float32)
+        kres = keras_model.predict(keras_input)
+
+        torch_input = torch.Tensor(keras_input).cuda()
+
+        if data_format == "channels_last":
+            # torch_input = torch_input.permute(0, 3, 1, 2)
+            raw_output = torch_model(torch_input)
+            reshaped = raw_output.permute(0, 2, 3, 1)
+            tres = reshaped.cpu().data.numpy()
+        else:
+            tres = torch_model(torch_input).cpu().data.numpy()
+        temp = torch.Tensor(tres)
+        assert (kres == tres).all()
 
 
 # TODO: Change to Hypothesis
 def test_compare_2d_local_full():
     """Compare keras and PyTorch 2D locally connected layers on randomly generated values."""
-    for i in range(50):
+    for i in range(10):
+        data_format = np.random.choice(("channels_first", "channels_last"))
+        # data_format = "channels_last"
         input_height = np.random.randint(2, 15)
         input_width = np.random.randint(2, 15)
         in_channels = np.random.randint(2, 15)
@@ -81,12 +141,17 @@ def test_compare_2d_local_full():
         kernel_width = np.random.randint(1, input_width)
         filters = np.random.randint(1, 20)
 
+        if data_format == "channels_last":
+            input_shape = (input_height, input_width, in_channels)
+        else:
+            input_shape = (in_channels, input_height, input_width)
+
         # Create keras model
         keras_model = keras.Sequential()
         keras_local = keras.layers.LocallyConnected2D(filters, (kernel_height, kernel_width),
                                                       use_bias=False,
-                                                      input_shape=(in_channels, input_height, input_width),
-                                                      data_format="channels_first")
+                                                      input_shape=input_shape,
+                                                      data_format=data_format)
         keras_model.add(keras_local)
 
         # Setup weights
@@ -96,16 +161,18 @@ def test_compare_2d_local_full():
         # Translate keras to PyTorch model
         torch_model = translate.translate_2d_locally_connected(keras_local)[0].cuda()
 
-        keras_input = np.random.uniform(-10, 10, (1, in_channels, input_height, input_width)).astype(np.float32)
+        keras_input = np.random.uniform(-10, 10, (1,) + input_shape).astype(np.float32)
         kres = keras_model.predict(keras_input)
 
-        torch_input = torch.Tensor(keras_input.copy()).cuda()
-        tres = torch_model(torch_input).cpu().data.numpy()
-        assert (kres == tres).all()
+        torch_input = torch.Tensor(keras_input).cuda()
 
-        # Cleanup
-        keras.backend.clear_session()
-        del torch_model
+        if data_format == "channels_last":
+            raw_output = torch_model(torch_input)
+            reshaped = raw_output.permute(0, 2, 3, 1)
+            tres = reshaped.cpu().data.numpy()
+        else:
+            tres = torch_model(torch_input).cpu().data.numpy()
+        assert (kres == tres).all()
 
 
 def test_compare_1d_local():

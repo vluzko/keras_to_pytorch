@@ -9,7 +9,7 @@ from torch.nn.modules.utils import _pair
 from torch.nn.functional import unfold
 
 
-def conv2d_local(input, weight, bias=None, padding=0, stride=1, dilation=1):
+def conv2d_local(input, weight, bias=None, padding=0, stride=1, dilation=1, data_format="channels_first"):
     """Calculate the local convolution.
 
     Args:
@@ -19,6 +19,7 @@ def conv2d_local(input, weight, bias=None, padding=0, stride=1, dilation=1):
         padding:
         stride:
         dilation:
+        data_format: For Keras compatibility
 
     Returns:
 
@@ -33,13 +34,31 @@ def conv2d_local(input, weight, bias=None, padding=0, stride=1, dilation=1):
     kernel_size = (kernel_height, kernel_width)
 
     # N x [in_channels * kernel_height * kernel_width] x [out_height * out_width]
-    cols = unfold(input, kernel_size, dilation=dilation, padding=padding, stride=stride)
-    cols2 = cols.view(cols.size(0), cols.size(1), cols.size(2), 1).permute(0, 2, 3, 1)
+    if data_format == "channels_first":
+        cols = unfold(input, kernel_size, dilation=dilation, padding=padding, stride=stride)
+        cols2 = cols.view(cols.size(0), cols.size(1), cols.size(2), 1).permute(0, 2, 3, 1)
+    if data_format == "channels_last":
+        # Taken from `keras.backend.tensorflow_backend.local_conv2d`
+        stride_y, stride_x = _pair(stride)
+        feature_dim = in_channels * kernel_height * kernel_width
+        xs = []
+        for i in range(out_height):
+            for j in range(out_width):
+                y = i * stride_y
+                slice_row = slice(y, y + kernel_size[0])
+                x = j * stride_x
+                slice_col = slice(x, x + kernel_size[1])
+                val = input[:, slice_row, slice_col, :].contiguous()
+                xs.append(val.view(1, -1, feature_dim))
+        concated = torch.cat(xs)
+        cols2 = concated.view(1, *concated.shape)
 
     output_size = out_height * out_width
     input_size = in_channels * kernel_height * kernel_width
     weights_view = weight.view(output_size, out_channels, input_size)
     permuted_weights = weights_view.permute(0, 2, 1)
+    # print("torch weights: {}".format(permuted_weights.data.cpu().numpy()))
+    # print("torch inputs:  {}".format(cols2.data.cpu().numpy()))
     out = torch.matmul(cols2, permuted_weights)
     out = out.view(cols2.size(0), out_height, out_width, out_channels).permute(0, 3, 1, 2)
 
@@ -47,6 +66,8 @@ def conv2d_local(input, weight, bias=None, padding=0, stride=1, dilation=1):
         out = out + bias.expand_as(out)
     return out
 
+
+import ipdb
 
 Pairable = Union[int, Tuple[int, int]]
 
@@ -60,12 +81,14 @@ class Conv2dLocal(Module):
 
     def __init__(self, in_height: int, in_width: int, in_channels: int, out_channels: int,
                  kernel_size: Pairable,
-                 stride: Pairable=1,
-                 padding: Pairable=0,
-                 bias: bool=True,
-                 dilation: Pairable=1):
+                 stride: Pairable = 1,
+                 padding: Pairable = 0,
+                 bias: bool = True,
+                 dilation: Pairable = 1,
+                 data_format="channels_first"):
         super(Conv2dLocal, self).__init__()
 
+        self.data_format = data_format
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size = _pair(kernel_size)
@@ -114,9 +137,12 @@ class Conv2dLocal(Module):
         return s.format(name=self.__class__.__name__, **self.__dict__)
 
     def forward(self, input):
-        return conv2d_local(
-            input, self.weight, self.bias, stride=self.stride,
-            padding=self.padding, dilation=self.dilation)
+        return conv2d_local(input, self.weight, self.bias,
+                            stride=self.stride,
+                            padding=self.padding,
+                            dilation=self.dilation,
+                            data_format=self.data_format
+                            )
 
 
 class Conv1dLocal(Conv2dLocal):
@@ -132,4 +158,5 @@ class Conv1dLocal(Conv2dLocal):
                          stride=two_dimensional_stride,
                          padding=two_dimensional_padding,
                          bias=bias,
-                         dilation=two_dimensional_dilation)
+                         dilation=two_dimensional_dilation,
+                         data_format=self.data_format)

@@ -101,7 +101,7 @@ def translate_1d_locally_connected(layer: keras.layers.LocallyConnected1D) -> Tu
         bias=layer.use_bias
     )
 
-    flat = torch.Tensor(kernel_weights.copy().flatten())
+    flat = torch.Tensor(kernel_weights.flatten())
     reshaped = flat.view(pt_local_conv.weight.shape)
     pt_local_conv.weight = nn.Parameter(reshaped)
 
@@ -150,7 +150,8 @@ def translate_2d_locally_connected(layer: keras.layers.LocallyConnected2D) -> Tu
         out_channels=filters,
         kernel_size=(kernel_height, kernel_width),
         stride=(stride_height, stride_width),
-        bias=layer.use_bias
+        bias=layer.use_bias,
+        data_format=layer.data_format
     )
 
     shape = (pt_local_conv.out_height, pt_local_conv.out_width, filters, in_channels, kernel_height, kernel_width)
