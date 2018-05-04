@@ -9,7 +9,15 @@ from torch.nn.modules.utils import _pair
 from torch.nn.functional import unfold
 
 
-def conv2d_local(input, weight, bias=None, padding=0, stride=1, dilation=1, data_format="channels_first"):
+Pairable = Union[int, Tuple[int, int]]
+
+
+def conv2d_local(input: torch.Tensor, weight: torch.Tensor,
+                 bias=None,
+                 padding: Pairable=0,
+                 stride: Pairable=1,
+                 dilation: Pairable=1,
+                 data_format: str="channels_first"):
     """Calculate the local convolution.
 
     Args:
@@ -57,19 +65,15 @@ def conv2d_local(input, weight, bias=None, padding=0, stride=1, dilation=1, data
     input_size = in_channels * kernel_height * kernel_width
     weights_view = weight.view(output_size, out_channels, input_size)
     permuted_weights = weights_view.permute(0, 2, 1)
-    # print("torch weights: {}".format(permuted_weights.data.cpu().numpy()))
-    # print("torch inputs:  {}".format(cols2.data.cpu().numpy()))
     out = torch.matmul(cols2, permuted_weights)
     out = out.view(cols2.size(0), out_height, out_width, out_channels).permute(0, 3, 1, 2)
 
     if bias is not None:
         out = out + bias.expand_as(out)
+
+    if data_format == "channels_last":
+        out = out.permute(0, 2, 3, 1)
     return out
-
-
-import ipdb
-
-Pairable = Union[int, Tuple[int, int]]
 
 
 class Conv2dLocal(Module):
@@ -77,6 +81,8 @@ class Conv2dLocal(Module):
 
     Attributes:
         weight (torch.Tensor): The weights. out_height x out_width x out_channels x in_channels x kernel_height x kernel_width
+        kernel_size (Tuple[int, int]): The height and width of the convolutional kernels.
+        stride (Tuple[int, int]): The stride height and width.
     """
 
     def __init__(self, in_height: int, in_width: int, in_channels: int, out_channels: int,
@@ -146,17 +152,17 @@ class Conv2dLocal(Module):
 
 
 class Conv1dLocal(Conv2dLocal):
-    """A 1-dimensional locally connected layer."""
+    """A 1D locally connected layer."""
 
-    def __init__(self, in_height, in_width, in_channels, out_channels,
+    def __init__(self, in_height, in_channels, out_channels,
                  kernel_size, stride=1, padding=0, bias=True, dilation=1):
         two_dimensional_kernel = (kernel_size, 1)
         two_dimensional_stride = (stride, 1)
         two_dimensional_padding = (padding, 0)
         two_dimensional_dilation = (dilation, 1)
-        super().__init__(in_height, in_width, in_channels, out_channels, two_dimensional_kernel,
+        super().__init__(in_height, 1, in_channels, out_channels, two_dimensional_kernel,
                          stride=two_dimensional_stride,
                          padding=two_dimensional_padding,
-                         bias=bias,
                          dilation=two_dimensional_dilation,
-                         data_format=self.data_format)
+                         bias=bias,
+                         data_format="channels_last")

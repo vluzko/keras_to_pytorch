@@ -76,8 +76,8 @@ def translate_fully_connected(layer: keras.layers.Dense) -> Tuple[nn.Module, Cal
 
 def translate_1d_locally_connected(layer: keras.layers.LocallyConnected1D) -> Tuple[nn.Module, Callable]:
     """Translate a 1-dimensional locally connected layer."""
-    _, input_height, in_channels = layer.input.shape.as_list()
-    _, _, filters = layer.output.shape.as_list()
+    input_height, in_channels = layer.input.shape.as_list()[-2:]
+    filters = layer.output.shape.as_list()[-1]
     kernel_size = layer.kernel_size[0]
     stride = layer.strides[0]
 
@@ -98,11 +98,16 @@ def translate_1d_locally_connected(layer: keras.layers.LocallyConnected1D) -> Tu
         out_channels=filters,
         kernel_size=(kernel_size, 1),
         stride=(stride, 1),
-        bias=layer.use_bias
+        bias=layer.use_bias,
+        data_format="channels_last"
     )
 
+    shape = (pt_local_conv.out_height, pt_local_conv.out_width, filters, in_channels, kernel_size, 1)
     flat = torch.Tensor(kernel_weights.flatten())
-    reshaped = flat.view(pt_local_conv.weight.shape)
+    # The final shape used in the actual matrix multiplication.
+    final = flat.view(pt_local_conv.out_height * pt_local_conv.out_width, in_channels * kernel_size * 1, filters)
+    # Invert the transformations to obtain the required weights.
+    reshaped = final.permute(0, 2, 1).view(shape)
     pt_local_conv.weight = nn.Parameter(reshaped)
 
     if bias_weights is not None:

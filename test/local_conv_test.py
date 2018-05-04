@@ -4,40 +4,20 @@ Honestly I probably should have just defined a commutative diagram and tested ev
 import numpy as np
 import keras
 import torch
-from torch.autograd import Variable
 
-from keras.preprocessing import sequence
-from keras.models import Sequential
-from keras.layers import Dense, Embedding, LSTM
-from keras.datasets import imdb
-from tensorflow.python import debug as tf_debug
-
-from ktp import locally_connected, translate
-
-import ipdb
-import pytest
+from ktp import translate
 
 
-# device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-
-
-def test_first():
-    a = locally_connected.Conv2dLocal(in_channels=256, out_channels=256, in_height=8, in_width=8, kernel_size=3, stride=1, padding=0)
-    input = Variable(torch.randn(1, 256, 8, 8))
-    output = a(input)
-
-
-def test_dense_network():
-    pass
-
-
-def test_compare_flattened_keras():
-    """Compare a flattened (i.e. width = 1) 2D locally connected layer to a 1D locally connected layer."""
-    for i in range(1):
+# TODO: Change to Hypothesis
+def test_compare_1d_and_flattened():
+    """Compare 1D keras and PyTorch layers to flattened 2D keras and PyTorch layers.
+    Currently a 1D PyTorch layer is just a flattened 2D PyTorch layer, so really this is a test that the translation process works correctly.
+    """
+    for i in range(10):
         input_height = np.random.randint(2, 10)
         in_channels = np.random.randint(1, 10)
         kernel_size = np.random.randint(1, input_height)
-        filters = np.random.randint(1, 10)
+        filters = np.random.randint(1, 20)
         input1_shape = (input_height, in_channels)
         input2_shape = (input_height, 1, in_channels)
 
@@ -51,81 +31,30 @@ def test_compare_flattened_keras():
         keras_flattened_2d_layer = keras.layers.LocallyConnected2D(filters, (kernel_size, 1), input_shape=input2_shape)
         keras_flattened_2d_model.add(keras_flattened_2d_layer)
 
-        # Flattened PyTorch 2D locally connected.
-        torch_flattened_model = translate.translate_2d_locally_connected(keras_flattened_2d_layer)[0].cuda()
-
         # Copy weights
         weights = np.random.uniform(-10, 10, keras_1d_layer.kernel_shape)
         keras_1d_model.set_weights([weights])
         keras_flattened_2d_model.set_weights([weights.reshape(keras_flattened_2d_layer.kernel_shape)])
 
-        # Compare outputs
+        # Flattened PyTorch 2D locally connected.
+        torch_flattened_model = translate.translate_2d_locally_connected(keras_flattened_2d_layer)[0].cuda()
+        torch_1d_model = translate.translate_1d_locally_connected(keras_1d_layer)[0].cuda()
+
+        # Generate inputs.
         keras_1d_input = np.arange(input_height * in_channels).reshape((1, input_height, in_channels))
         keras_2d_input = keras_1d_input.reshape((1, input_height, 1, in_channels))
-        keras_input = keras_2d_input.reshape((1, in_channels, input_height, 1)).astype(np.float32)
-        torch_input = torch.Tensor(keras_input).cuda()
+        torch_input = torch.Tensor(keras_2d_input).cuda()
 
-        # keras_input = np.random.uniform(-10, 10, (1, in_channels, input_height, input_width)).astype(np.float32)
-        # kres = keras_model.predict(keras_input)
-        #
-        # torch_input = torch.Tensor(keras_input.copy()).cuda()
-        # tres = torch_model(torch_input).cpu().data.numpy()
-
-        first_pred = keras_1d_model.predict(keras_1d_input)
-        second_pred = keras_flattened_2d_model.predict(keras_2d_input)
-        tres = torch_flattened_model(torch_input).cpu().data.numpy()
-        assert (first_pred.reshape(second_pred.shape) == second_pred == tres).all()
-
-
-# TODO: Change to Hypothesis
-def test_compare_2d_local():
-    """Compare keras and PyTorch 2D locally connected layers on randomly generated values."""
-    for i in range(1):
-        data_format = np.random.choice(("channels_first", "channels_last"))
-        # data_format = "channels_last"
-        input_height = 2
-        input_width = 4
-        in_channels = 11
-        kernel_height = 1
-        kernel_width = 2
-        filters = 3
-
-        if data_format == "channels_last":
-            input_shape = (input_height, input_width, in_channels)
-        else:
-            input_shape = (in_channels, input_height, input_width)
-
-        # Create keras model
-        keras_model = keras.Sequential()
-        keras_local = keras.layers.LocallyConnected2D(filters, (kernel_height, kernel_width),
-                                                      use_bias=False,
-                                                      input_shape=input_shape,
-                                                      data_format=data_format)
-        keras_model.add(keras_local)
-
-        # Setup weights
-        weight_size = keras_local.kernel.shape.num_elements()
-        # weights = np.random.uniform(-10, 10, keras_local.kernel.shape.as_list())
-        weights = np.arange(weight_size).reshape(keras_local.kernel.shape.as_list())
-        keras_model.set_weights([weights])
-
-        # Translate keras to PyTorch model
-        torch_model = translate.translate_2d_locally_connected(keras_local)[0].cuda()
-
-        keras_input = np.arange(in_channels * input_width * input_height).reshape((1,) + input_shape).astype(np.float32)
-        kres = keras_model.predict(keras_input)
-
-        torch_input = torch.Tensor(keras_input).cuda()
-
-        if data_format == "channels_last":
-            # torch_input = torch_input.permute(0, 3, 1, 2)
-            raw_output = torch_model(torch_input)
-            reshaped = raw_output.permute(0, 2, 3, 1)
-            tres = reshaped.cpu().data.numpy()
-        else:
-            tres = torch_model(torch_input).cpu().data.numpy()
-        temp = torch.Tensor(tres)
-        assert (kres == tres).all()
+        # Compute and compare outputs.
+        keras_1d_output = keras_1d_model.predict(keras_1d_input)
+        keras_flattened_output = keras_flattened_2d_model.predict(keras_2d_input)
+        torch_flattened_output = torch_flattened_model(torch_input).cpu().data.numpy()
+        torch_1d_output = torch_1d_model(torch_input).cpu().data.numpy()
+        output_shape = keras_flattened_output.shape
+        assert all((
+            (keras_1d_output.reshape(output_shape) == keras_flattened_output).all(),
+            (keras_1d_output.reshape(keras_flattened_output.shape) == torch_flattened_output).all(),
+            (keras_1d_output.reshape(keras_flattened_output.shape) == torch_1d_output).all()))
 
 
 # TODO: Change to Hypothesis
@@ -133,7 +62,6 @@ def test_compare_2d_local_full():
     """Compare keras and PyTorch 2D locally connected layers on randomly generated values."""
     for i in range(10):
         data_format = np.random.choice(("channels_first", "channels_last"))
-        # data_format = "channels_last"
         input_height = np.random.randint(2, 15)
         input_width = np.random.randint(2, 15)
         in_channels = np.random.randint(2, 15)
@@ -162,42 +90,8 @@ def test_compare_2d_local_full():
         torch_model = translate.translate_2d_locally_connected(keras_local)[0].cuda()
 
         keras_input = np.random.uniform(-10, 10, (1,) + input_shape).astype(np.float32)
-        kres = keras_model.predict(keras_input)
+        keras_output = keras_model.predict(keras_input)
 
         torch_input = torch.Tensor(keras_input).cuda()
-
-        if data_format == "channels_last":
-            raw_output = torch_model(torch_input)
-            reshaped = raw_output.permute(0, 2, 3, 1)
-            tres = reshaped.cpu().data.numpy()
-        else:
-            tres = torch_model(torch_input).cpu().data.numpy()
-        assert (kres == tres).all()
-
-
-def test_compare_1d_local():
-    for i in range(1):
-        input_height = np.random.randint(2, 3)
-        in_channels = np.random.randint(2, 3)
-        kernel_height = np.random.randint(1, input_height)
-        filters = 1
-
-        model = keras.Sequential()
-        keras_local = keras.layers.LocallyConnected1D(filters, kernel_height, input_shape=(input_height, in_channels), use_bias=False)
-        model.add(keras_local)
-        weight_size = keras_local.kernel.shape.num_elements()
-        weights = np.arange(weight_size).reshape(keras_local.kernel.shape.as_list())
-        model.set_weights([weights])
-
-        pt = translate.translate_1d_locally_connected(keras_local)[0].cuda()
-
-        input_size = input_height * in_channels
-        x = np.arange(input_size).reshape((1, input_height, in_channels)).astype(np.float32)
-        for_torch = torch.Tensor(x.reshape((1, in_channels, input_height, 1))).cuda()
-        k_res = model.predict(x)
-        t_res = pt(for_torch).cpu().data.numpy()
-        assert (k_res == t_res).all()
-
-
-def test_compare_flattened_2d_and_1d():
-    pass
+        torch_output = torch_model(torch_input).cpu().data.numpy()
+        assert (keras_output == torch_output).all()
