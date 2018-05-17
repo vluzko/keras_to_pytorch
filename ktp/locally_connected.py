@@ -120,6 +120,15 @@ class Conv2dLocal(Module):
 
         self.reset_parameters()
 
+    @property
+    def input_shape(self):
+        """The expected input shape for this module."""
+        if self.data_format == "channels_first":
+            shape = (self.in_channels, self.in_height, self.in_width)
+        else:
+            shape = (self.in_height, self.in_width, self.in_channels)
+        return torch.Tensor(shape)
+
     def reset_parameters(self):
         """Reset the parameters of the layer."""
         n = self.in_channels

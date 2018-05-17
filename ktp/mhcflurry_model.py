@@ -10,14 +10,15 @@ from copy import copy
 from io import StringIO
 from typing import NamedTuple, Tuple
 from pathlib import Path
-from functools import reduce
+from functools import reduce, partial
 
 import torch
-from torch import nn, Tensor
-from torch.nn import functional as F
+from torch import nn
 
 from ktp import translate
 import ipdb
+
+import mhcflurry
 
 class_key = 'class_name'
 test_dir = Path("./test")
@@ -47,7 +48,7 @@ class MHCFlurryNet(nn.Module):
         self.layers = nn.ModuleList(layers)
         self.activations = activations
 
-    def forward(self, input):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
         """Feed forward."""
         raise NotImplementedError
 
@@ -62,15 +63,14 @@ class NoLocal(MHCFlurryNet):
 
     architecture = ('InputLayer', 'Flatten', 'Dense', 'Dense')
 
-    def forward(self, input):
-        output = input.view(tuple(self.layers.size()))
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        output = input.view(-1)
         for layer, act in zip(self.layers, self.activations):
-            # output = output.view
             output = act(layer(output))
         return output
 
     @classmethod
-    def from_model(cls, allele: str, model):
+    def from_model(cls, allele: str, model: keras.models.Model) -> 'NoLocal':
         dense1, act1 = translate.translate_fully_connected(model.layers[2])
         dense2, act2 = translate.translate_fully_connected(model.layers[3])
         return NoLocal(allele, [dense1, dense2], [act1, act2])
@@ -91,7 +91,7 @@ class OneLocal(MHCFlurryNet):
         return output
 
     @classmethod
-    def from_model(cls, allele: str, model):
+    def from_model(cls, allele: str, model: keras.models.Model) -> 'OneLocal':
         local1, act1 = translate.translate_1d_locally_connected(model.layers[1])
         dense1, act2 = translate.translate_fully_connected(model.layers[3])
         dense2, act3 = translate.translate_fully_connected(model.layers[4])
@@ -114,12 +114,12 @@ class TwoLocal(MHCFlurryNet):
         return output
 
     @classmethod
-    def from_model(cls, allele: str, model):
+    def from_model(cls, allele: str, model: keras.models.Model) -> 'TwoLocal':
         local1, act1 = translate.translate_1d_locally_connected(model.layers[1])
         local2, act2 = translate.translate_1d_locally_connected(model.layers[2])
         dense1, act3 = translate.translate_fully_connected(model.layers[4])
         dense2, act4 = translate.translate_fully_connected(model.layers[5])
-        return OneLocal(allele, [local1, local2, dense1, dense2], [act1, act2, act3, act4])
+        return TwoLocal(allele, [local1, local2, dense1, dense2], [act1, act2, act3, act4])
 
 
 class MHCFlurryEnsemble(nn.Module):
@@ -128,8 +128,9 @@ class MHCFlurryEnsemble(nn.Module):
     Attributes:
     """
 
-    def __init__(self, allele, models: Tuple[MHCFlurryNet, ...]):
+    def __init__(self, allele, models: Tuple[MHCFlurryNet, ...], k):
         super().__init__()
+        self.kms = k
         self.allele = allele
         self.models = nn.ModuleList(models)
         self.exp = 1 / len(self.models)
@@ -140,32 +141,32 @@ class MHCFlurryEnsemble(nn.Module):
         prod = reduce(lambda a, b: a * b, outputs, 1)
         return torch.pow(prod, self.exp)
 
+    def keras_pred(self, input):
+        for model in self.kms:
+            pass
+
     @classmethod
-    def ensemble_from_rows(cls, model_rows: pd.DataFrame):
+    def ensemble_from_rows(cls, allele, model_rows: pd.DataFrame):
         """Create an ensemble model from the dataframe.
         Does not check that all rows define models for the same allele.
         """
-        allele = model_rows['allele'].unique()[0]
-        models = tuple(row_to_net(row)[0] for _, row in model_rows.iterrows())
-        return cls(allele, models)
+        all_models = tuple(row_to_net(allele, row) for _, row in model_rows.iterrows())
+        models, k = zip(*all_models)
+        return cls(allele, models, k)
 
 
-def row_to_net(row: pd.Series) -> Tuple[MHCFlurryNet, keras.models.Model]:
+def row_to_net(allele, row: pd.Series) -> Tuple[MHCFlurryNet, mhcflurry.Class1NeuralNetwork]:
     """Convert a row of the manifest to a PyTorch model and a keras model"""
     name = row["model_name"]
-    allele = row["allele"]
     weights_path = weights_dir / Path("weights_{}.npz".format(name))
-    weights_np = np.load(str(weights_path))
-    weights = [weights_np["array_{}".format(i)] for i, _ in enumerate(weights_np)]
-    weights_np.close()
     model_json = json.loads(row["config_json"])
-    network_str = model_json['network_json']
-    keras_model = keras.models.model_from_json(network_str)
-    keras_model.set_weights(weights)
+    network_str = model_json["network_json"]
+
+    mhc = mhcflurry.Class1NeuralNetwork.from_config(model_json, weights_loader=partial(mhcflurry.Class1AffinityPredictor.load_weights, str(weights_path.resolve())))
 
     cls = model_architecture(network_str)
-    pytorch_model = cls.from_model(allele, keras_model)
-    return pytorch_model, keras_model
+    pytorch_model = cls.from_model(allele, mhc.network())
+    return pytorch_model, mhc
 
 
 def model_architecture(network_json_string: str) -> type(MHCFlurryNet):
@@ -176,18 +177,23 @@ def model_architecture(network_json_string: str) -> type(MHCFlurryNet):
     return architecture_maps[layer_names]
 
 
+def get_predictor(allele: str) -> MHCFlurryEnsemble:
+    manifest = pd.read_csv(str(manifest_path))
+    relevant_rows = manifest[manifest['allele'] == allele]
+    ensemble = MHCFlurryEnsemble.ensemble_from_rows(allele, relevant_rows)
+    return ensemble
+
+
 def make_prediction(allele: str, peptide: str) -> float:
     """Predict the binding affinity of the given allele and peptide.
     Uses an ensemble of all stored models for that allele.
     """
-    manifest = pd.read_csv(str(manifest_path))
-    relevant_rows = manifest[manifest['allele'] == allele]
-    ensemble = MHCFlurryEnsemble.ensemble_from_rows(relevant_rows)
+    ensemble = get_predictor(allele)
     encoded_peptide = peptides_to_network_input((peptide,), encoding="BLOSUM62")
-    return ensemble(torch.FloatTensor(encoded_peptide.reshape((1, 21, 15, 1))))
+    return ensemble(torch.Tensor(encoded_peptide.reshape((1, 15, 1, 21))))
 
 
-def peptides_to_network_input(peptides: Tuple[str, ...], encoding: str, kmer_size: int=15) -> np.ndarray:
+def peptides_to_network_input(peptides: Tuple[str, ...], encoding: str, kmer_size: int = 15) -> np.ndarray:
     """Encode peptides to the fixed-length encoding expected by the neural network (which depends on the architecture).
 
     Args:
@@ -200,83 +206,16 @@ def peptides_to_network_input(peptides: Tuple[str, ...], encoding: str, kmer_siz
         numpy array of encoded peptides.
     """
     seq_array = np.array(peptides)
+    fixed_length_sequences = sequences_to_fixed_length_index_encoded_array(seq_array, left_edge=4, right_edge=4, max_length=15)
     if encoding == "embedding":
-        encoded = variable_length_to_fixed_length_categorical(
-            seq_array,
-            max_length=kmer_size,
-            left_edge=4,
-            right_edge=4
-        )
+        encoded = fixed_length_sequences
     elif encoding in ENCODING_DATA_FRAMES.keys():
-        encoded = variable_length_to_fixed_length_vector_encoding(
-            seq_array,
-            encoding,
-            max_length=kmer_size,
-            left_edge=4,
-            right_edge=4,
-        )
+        encoded = fixed_vectors_encoding(fixed_length_sequences, ENCODING_DATA_FRAMES[encoding])
+        assert encoded.shape[0] == len(seq_array)
     else:
         raise ValueError("Unsupported peptide_amino_acid_encoding: {}".format(encoding))
     assert len(encoded) == len(peptides)
     return encoded
-
-
-def variable_length_to_fixed_length_categorical(sequences, left_edge=4, right_edge=4, max_length=15):
-    """
-    Encode variable-length sequences using a fixed-length encoding designed
-    for preserving the anchor positions of class I peptides.
-
-    The sequences must be of length at least left_edge + right_edge, and at
-    most max_length.
-
-    Parameters
-    ----------
-    left_edge : int, size of fixed-position left side
-    right_edge : int, size of the fixed-position right side
-    max_length : sequence length of the resulting encoding
-
-    Returns
-    -------
-    numpy.array of integers with shape (num sequences, max_length)
-    """
-
-    fixed_length_sequences = sequences_to_fixed_length_index_encoded_array(
-        sequences,
-        left_edge=left_edge,
-        right_edge=right_edge,
-        max_length=max_length)
-    return fixed_length_sequences
-
-
-def variable_length_to_fixed_length_vector_encoding(sequences, vector_encoding_name, left_edge=4, right_edge=4, max_length=15):
-    """
-    Encode variable-length sequences using a fixed-length encoding designed
-    for preserving the anchor positions of class I peptides.
-
-    The sequences must be of length at least left_edge + right_edge, and at
-    most max_length.
-
-    Args:
-        sequences
-        vector_encoding_name : string
-            How to represent amino acids.
-            One of "BLOSUM62", "one-hot", etc. Full list of supported vector
-            encodings is given by available_vector_encodings().
-        left_edge : int, size of fixed-position left side
-        right_edge : int, size of the fixed-position right side
-        max_length : sequence length of the resulting encoding
-
-    Returns:
-        numpy.array with shape (num sequences, max_length, m) where m is a vector_encoding_length(vector_encoding_name)
-    """
-    fixed_length_sequences = sequences_to_fixed_length_index_encoded_array(
-        sequences,
-        left_edge=left_edge,
-        right_edge=right_edge,
-        max_length=max_length)
-    result = fixed_vectors_encoding(fixed_length_sequences, ENCODING_DATA_FRAMES[vector_encoding_name])
-    assert result.shape[0] == len(sequences)
-    return result
 
 
 COMMON_AMINO_ACIDS = collections.OrderedDict(sorted({
@@ -309,6 +248,7 @@ AMINO_ACID_INDEX = dict(
 
 AMINO_ACIDS = list(COMMON_AMINO_ACIDS_WITH_UNKNOWN.keys())
 
+# Why isn't this a numerical matrix? The world may never know.
 BLOSUM62_MATRIX = pd.read_table(StringIO("""
    A  R  N  D  C  Q  E  G  H  I  L  K  M  F  P  S  T  W  Y  V  X
 A  4 -1 -2 -2  0 -1 -1  0 -2 -1 -1 -1 -1 -2 -1  1  0 -3 -2  0  0

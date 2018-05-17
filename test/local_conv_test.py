@@ -9,8 +9,6 @@ from ktp import translate
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 # TODO: Change to Hypothesis
 def test_compare_1d_and_flattened():

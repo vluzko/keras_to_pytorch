@@ -35,6 +35,7 @@ def translate_sequential_model(model: keras.models.Sequential) -> nn.Module:
         translated, activation = translate_layer(layer)
         modules.append(translated)
         activations.append(activations)
+    return modules
 
 
 @singledispatch
