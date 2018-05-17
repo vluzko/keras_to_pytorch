@@ -7,6 +7,7 @@ import torch
 
 from ktp import translate
 
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -35,18 +36,18 @@ def test_compare_1d_and_flattened():
         keras_flattened_2d_model.add(keras_flattened_2d_layer)
 
         # Copy weights
-        weights = np.random.uniform(-10, 10, keras_1d_layer.kernel_shape)
+        weights = np.random.uniform(-10, 10, keras_1d_layer.kernel_shape).astype(np.float32)
         keras_1d_model.set_weights([weights])
         keras_flattened_2d_model.set_weights([weights.reshape(keras_flattened_2d_layer.kernel_shape)])
 
         # Flattened PyTorch 2D locally connected.
-        torch_flattened_model = translate.translate_2d_locally_connected(keras_flattened_2d_layer)[0].cuda()
-        torch_1d_model = translate.translate_1d_locally_connected(keras_1d_layer)[0].cuda()
+        torch_flattened_model = translate.translate_2d_locally_connected(keras_flattened_2d_layer)[0].to(device)
+        torch_1d_model = translate.translate_1d_locally_connected(keras_1d_layer)[0].to(device)
 
         # Generate inputs.
-        keras_1d_input = np.arange(input_height * in_channels).reshape((1, input_height, in_channels))
+        keras_1d_input = np.arange(input_height * in_channels).reshape((1, input_height, in_channels)).astype(np.float32)
         keras_2d_input = keras_1d_input.reshape((1, input_height, 1, in_channels))
-        torch_input = torch.Tensor(keras_2d_input).cuda()
+        torch_input = torch.Tensor(keras_2d_input).to(device)
 
         # Compute and compare outputs.
         keras_1d_output = keras_1d_model.predict(keras_1d_input)
@@ -56,8 +57,8 @@ def test_compare_1d_and_flattened():
         output_shape = keras_flattened_output.shape
         assert all((
             (keras_1d_output.reshape(output_shape) == keras_flattened_output).all(),
-            (keras_1d_output.reshape(keras_flattened_output.shape) == torch_flattened_output).all(),
-            (keras_1d_output.reshape(keras_flattened_output.shape) == torch_1d_output).all()))
+            np.isclose(keras_1d_output.reshape(keras_flattened_output.shape), torch_flattened_output, atol=1e-4, rtol=1e-4).all(),
+            np.isclose(keras_1d_output.reshape(keras_flattened_output.shape), torch_1d_output, atol=1e-4, rtol=1e-4).all()))
 
 
 # TODO: Change to Hypothesis
@@ -86,15 +87,15 @@ def test_compare_2d_local_full():
         keras_model.add(keras_local)
 
         # Setup weights
-        weights = np.random.uniform(-10, 10, keras_local.kernel.shape.as_list())
+        weights = np.random.uniform(-10, 10, keras_local.kernel.shape.as_list()).astype(np.float32)
         keras_model.set_weights([weights])
 
         # Translate keras to PyTorch model
-        torch_model = translate.translate_2d_locally_connected(keras_local)[0].cuda()
+        torch_model = translate.translate_2d_locally_connected(keras_local)[0].to(device)
 
         keras_input = np.random.uniform(-10, 10, (1,) + input_shape).astype(np.float32)
         keras_output = keras_model.predict(keras_input)
 
-        torch_input = torch.Tensor(keras_input).cuda()
+        torch_input = torch.Tensor(keras_input).to(device)
         torch_output = torch_model(torch_input).cpu().data.numpy()
-        assert (keras_output == torch_output).all()
+        assert np.isclose(keras_output, torch_output, atol=1e-4, rtol=1e-4).all()
