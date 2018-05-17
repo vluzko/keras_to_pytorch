@@ -8,6 +8,9 @@ import torch
 from ktp import translate
 
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 # TODO: Change to Hypothesis
 def test_compare_1d_and_flattened():
     """Compare 1D keras and PyTorch layers to flattened 2D keras and PyTorch layers.

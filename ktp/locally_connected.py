@@ -44,8 +44,8 @@ def conv2d_local(input: torch.Tensor, weight: torch.Tensor,
     # N x [in_channels * kernel_height * kernel_width] x [out_height * out_width]
     if data_format == "channels_first":
         cols = unfold(input, kernel_size, dilation=dilation, padding=padding, stride=stride)
-        cols2 = cols.view(cols.size(0), cols.size(1), cols.size(2), 1).permute(0, 2, 3, 1)
-    if data_format == "channels_last":
+        reshaped_input = cols.view(cols.size(0), cols.size(1), cols.size(2), 1).permute(0, 2, 3, 1)
+    else:
         # Taken from `keras.backend.tensorflow_backend.local_conv2d`
         stride_y, stride_x = _pair(stride)
         feature_dim = in_channels * kernel_height * kernel_width
@@ -59,14 +59,14 @@ def conv2d_local(input: torch.Tensor, weight: torch.Tensor,
                 val = input[:, slice_row, slice_col, :].contiguous()
                 xs.append(val.view(1, -1, feature_dim))
         concated = torch.cat(xs)
-        cols2 = concated.view(1, *concated.shape)
+        reshaped_input = concated.view(1, *concated.shape)
 
     output_size = out_height * out_width
     input_size = in_channels * kernel_height * kernel_width
     weights_view = weight.view(output_size, out_channels, input_size)
     permuted_weights = weights_view.permute(0, 2, 1)
-    out = torch.matmul(cols2, permuted_weights)
-    out = out.view(cols2.size(0), out_height, out_width, out_channels).permute(0, 3, 1, 2)
+    out = torch.matmul(reshaped_input, permuted_weights)
+    out = out.view(reshaped_input.size(0), out_height, out_width, out_channels).permute(0, 3, 1, 2)
 
     if bias is not None:
         out = out + bias.expand_as(out)
