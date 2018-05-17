@@ -150,7 +150,7 @@ class MHCFlurryEnsemble(nn.Module):
         return cls(allele, models)
 
 
-def row_to_net(row: pd.Series) -> Tuple[MHCFlurryNet, keras.Model]:
+def row_to_net(row: pd.Series) -> Tuple[MHCFlurryNet, keras.models.Model]:
     """Convert a row of the manifest to a PyTorch model and a keras model"""
     name = row["model_name"]
     allele = row["allele"]

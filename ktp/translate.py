@@ -27,7 +27,7 @@ class SequentialModule(nn.Module):
         return input
 
 
-def translate_sequential_model(model: keras.Sequential) -> nn.Module:
+def translate_sequential_model(model: keras.models.Sequential) -> nn.Module:
     """Translate a sequential model."""
     modules = nn.ModuleList()
     activations = []

@@ -30,9 +30,10 @@ def test_mhcflurry_models():
     network_str = model_json['network_json']
     model = keras.models.model_from_json(network_str)
     model.set_weights(weights)
-    pt_local, local_act = translate.translate_1d_locally_connected(model.layers[1])
-    pt_dense1, dense_act1 = translate.translate_fully_connected(model.layers[3])
-    pt_dense2, dense_act2 = translate.translate_fully_connected(model.layers[4])
+    pt_local1, local_act1 = translate.translate_1d_locally_connected(model.layers[1])
+    pt_local2, local_act2 = translate.translate_1d_locally_connected(model.layers[2])
+    pt_dense1, dense_act1 = translate.translate_fully_connected(model.layers[4])
+    pt_dense2, dense_act2 = translate.translate_fully_connected(model.layers[5])
 
 
 def test_predict():
