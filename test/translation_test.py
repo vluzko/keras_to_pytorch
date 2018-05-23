@@ -1,6 +1,8 @@
-"""Comparison tests between different implementations of locally connected layers.
-Honestly I probably should have just defined a commutative diagram and tested everything along that, but oh well.
-"""
+"""Comparison tests between pre and post translation layers."""
+from hypothesis import given
+from hypothesis.strategies import floats, integers
+from hypothesis.extra.numpy import arrays
+
 import numpy as np
 import keras
 import torch
@@ -11,7 +13,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 # TODO: Change to Hypothesis
-def test_compare_1d_and_flattened():
+def test_1d_local_convolution():
     """Compare 1D keras and PyTorch layers to flattened 2D keras and PyTorch layers.
     Currently a 1D PyTorch layer is just a flattened 2D PyTorch layer, so really this is a test that the translation process works correctly.
     """
@@ -60,7 +62,7 @@ def test_compare_1d_and_flattened():
 
 
 # TODO: Change to Hypothesis
-def test_compare_2d_local_full():
+def test_2d_local_convolution():
     """Compare keras and PyTorch 2D locally connected layers on randomly generated values."""
     for i in range(10):
         data_format = np.random.choice(("channels_first", "channels_last"))
@@ -97,3 +99,24 @@ def test_compare_2d_local_full():
         torch_input = torch.Tensor(keras_input).to(device)
         torch_output = torch_model(torch_input).cpu().data.numpy()
         assert np.isclose(keras_output, torch_output, atol=1e-4, rtol=1e-4).all()
+
+
+@given(integers(min_value=1, max_value=100), integers(min_value=1, max_value=100), integers(min_value=1))
+def test_dense(input_size, output_size, seed):
+    np.random.seed(seed)
+    keras_model = keras.Sequential()
+    keras_dense = keras.layers.Dense(output_size, input_shape=(input_size,), use_bias=True)
+    keras_model.add(keras_dense)
+
+    weights = np.random.uniform(-100, 100, (input_size, output_size)).astype(np.float32)
+
+    keras_model.set_weights([weights])
+
+    torch_model = translate.translate_fully_connected(keras_dense)[0].to(device)
+
+    keras_input = np.random.uniform(-100, 100,  (1, input_size)).astype(np.float32)
+    keras_output = keras_model.predict(keras_input)
+
+    torch_input = torch.Tensor(keras_input).to(device)
+    torch_output = torch_model(torch_input).cpu().data.numpy()
+    assert np.isclose(keras_output, torch_output).all()

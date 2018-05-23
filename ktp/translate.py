@@ -3,7 +3,7 @@ import keras
 import numpy as np
 
 from functools import singledispatch
-from typing import Tuple, Callable, List
+from typing import Tuple, Callable, List, Optional
 
 import torch
 from torch import nn
@@ -11,6 +11,20 @@ from torch.nn import Parameter
 import torch.nn.functional as f
 
 from ktp import locally_connected
+
+
+def get_kernel_and_bias(layer) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    """Extract kernel and bias weights from a layer that may not be using bias."""
+    keras_weights = layer.get_weights()
+    if len(keras_weights) == 1:
+        kernel_weights = keras_weights[0]
+        bias_weights = None
+        assert layer.use_bias is False
+    elif len(keras_weights) == 2:
+        kernel_weights, bias_weights = keras_weights
+    else:
+        raise NotImplementedError("Expected keras_weights to be of length 1 or 2. Was: {}. Full weights: {}".format(len(keras_weights), keras_weights))
+    return kernel_weights, bias_weights
 
 
 class SequentialModule(nn.Module):
@@ -59,16 +73,19 @@ def translate_activation(activation):
     else:
         raise NotImplementedError
 
-
+import ipdb
+# TODO: Keras is the transpose of the default Pytorch behavior. Extend this to account for that (transpose the input, transpose the output).
 def translate_fully_connected(layer: keras.layers.Dense) -> Tuple[nn.Module, Callable]:
     """Translate a fully connected layer."""
     _, input_size = layer.input_shape
     _, output_size = layer.output_shape
-    kernel_weights, bias_weights = layer.get_weights()
+    kernel_weights, bias_weights = get_kernel_and_bias(layer)
 
     pt_dense = nn.Linear(input_size, output_size, bias=layer.use_bias)
-    pt_dense.weight = nn.Parameter(torch.FloatTensor(kernel_weights.reshape(tuple(pt_dense.weight.shape))))
-    pt_dense.bias = nn.Parameter(torch.FloatTensor(bias_weights.reshape(tuple(pt_dense.bias.shape))))
+    pt_dense.weight = nn.Parameter(torch.Tensor(kernel_weights.transpose()))
+
+    if bias_weights is not None:
+        pt_dense.bias = nn.Parameter(torch.Tensor(bias_weights.reshape(tuple(pt_dense.bias.shape))))
 
     activation = translate_activation(layer.activation)
 
@@ -115,15 +132,11 @@ def translate_1d_locally_connected(layer: keras.layers.LocallyConnected1D) -> Tu
         reshaped_bias = bias_weights.reshape(pt_local_conv.bias.shape)
         pt_local_conv.bias = Parameter(torch.Tensor(reshaped_bias))
 
-    if bias_weights is not None:
-        reshaped_bias = bias_weights.reshape(pt_local_conv.bias.shape)
-        pt_local_conv.bias = Parameter(torch.Tensor(reshaped_bias))
-
     activation = translate_activation(layer.activation)
 
     return pt_local_conv, activation
 
-import ipdb
+
 def translate_2d_locally_connected(layer: keras.layers.LocallyConnected2D) -> Tuple[nn.Module, Callable]:
     """Translate a 2-dimensional locally connected layer."""
     # Extract various size and shape parameters

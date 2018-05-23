@@ -25,4 +25,4 @@ def test_predict():
     print(prediction)
     ensemble = mhcflurry_model.get_predictor(allele)
     encoded_peptide = mhcflurry_model.peptides_to_network_input((peptide,), encoding="BLOSUM62")
-
+    ensemble.predict

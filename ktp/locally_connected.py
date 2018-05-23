@@ -151,7 +151,7 @@ class Conv2dLocal(Module):
         s += ')'
         return s.format(name=self.__class__.__name__, **self.__dict__)
 
-    def forward(self, input):
+    def forward(self, input: torch.Tensor):
         return conv2d_local(input, self.weight, self.bias,
                             stride=self.stride,
                             padding=self.padding,
@@ -175,3 +175,9 @@ class Conv1dLocal(Conv2dLocal):
                          dilation=two_dimensional_dilation,
                          bias=bias,
                          data_format="channels_last")
+
+
+class Flatten(Module):
+
+    def forward(self, input: torch.Tensor):
+        return input.view(-1)
