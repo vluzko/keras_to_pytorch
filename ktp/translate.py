@@ -73,7 +73,7 @@ def translate_activation(activation):
     else:
         raise NotImplementedError
 
-import ipdb
+
 # TODO: Keras is the transpose of the default Pytorch behavior. Extend this to account for that (transpose the input, transpose the output).
 def translate_fully_connected(layer: keras.layers.Dense) -> Tuple[nn.Module, Callable]:
     """Translate a fully connected layer."""

@@ -128,9 +128,9 @@ class MHCFlurryEnsemble(nn.Module):
     Attributes:
     """
 
-    def __init__(self, allele, models: Tuple[MHCFlurryNet, ...], k):
+    def __init__(self, allele, models: Tuple[MHCFlurryNet, ...], keras_models: Tuple[mhcflurry.Class1NeuralNetwork, ...]):
         super().__init__()
-        self.kms = k
+        self.keras_models = keras_models
         self.allele = allele
         self.models = nn.ModuleList(models)
         self.exp = 1 / len(self.models)
@@ -142,8 +142,10 @@ class MHCFlurryEnsemble(nn.Module):
         return torch.pow(prod, self.exp)
 
     def keras_pred(self, input):
-        for model in self.kms:
-            pass
+        """Make a prediction with the underlying keras models."""
+        preds = [k.predict(input) for k in self.keras_models]
+        geometric_mean = reduce(lambda a, b: a*b, preds, 1) ** self.exp
+        return preds, geometric_mean
 
     @classmethod
     def ensemble_from_rows(cls, allele, model_rows: pd.DataFrame):
@@ -151,8 +153,8 @@ class MHCFlurryEnsemble(nn.Module):
         Does not check that all rows define models for the same allele.
         """
         all_models = tuple(row_to_net(allele, row) for _, row in model_rows.iterrows())
-        models, k = zip(*all_models)
-        return cls(allele, models, k)
+        models, keras_models = zip(*all_models)
+        return cls(allele, models, keras_models)
 
 
 def row_to_net(allele, row: pd.Series) -> Tuple[MHCFlurryNet, mhcflurry.Class1NeuralNetwork]:
