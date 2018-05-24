@@ -11,7 +11,7 @@ from torch.nn.functional import unfold
 
 Pairable = Union[int, Tuple[int, int]]
 
-
+import ipdb
 def conv2d_local(input: torch.Tensor, weight: torch.Tensor,
                  bias=None,
                  padding: Pairable=0,
@@ -68,11 +68,14 @@ def conv2d_local(input: torch.Tensor, weight: torch.Tensor,
     out = torch.matmul(reshaped_input, permuted_weights)
     out = out.view(reshaped_input.size(0), out_height, out_width, out_channels).permute(0, 3, 1, 2)
 
-    if bias is not None:
-        out = out + bias.expand_as(out)
-
     if data_format == "channels_last":
         out = out.permute(0, 2, 3, 1)
+
+    if bias is not None:
+        final_bias = bias.expand_as(out)
+        print("torch bias: {}".format(final_bias))
+        out = out + final_bias
+
     return out
 
 
@@ -108,13 +111,16 @@ class Conv2dLocal(Module):
             (in_height + 2 * self.padding[0] - self.dilation[0] * (self.kernel_size[0] - 1) - 1) / self.stride[0] + 1))
         self.out_width = int(math.floor(
             (in_width + 2 * self.padding[1] - self.dilation[1] * (self.kernel_size[1] - 1) - 1) / self.stride[1] + 1))
+        self.out_channels = out_channels
 
         self.weight = Parameter(torch.Tensor(
             self.out_height, self.out_width,
             out_channels, in_channels, *self.kernel_size))
         if bias:
-            self.bias = Parameter(torch.Tensor(
-                out_channels, self.out_height, self.out_width))
+            if self.data_format == "channels_first":
+                self.bias = Parameter(torch.Tensor(out_channels, self.out_height, self.out_width))
+            else:
+                self.bias = Parameter(torch.Tensor(self.out_height, self.out_width, out_channels))
         else:
             self.register_parameter('bias', None)
 

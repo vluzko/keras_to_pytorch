@@ -105,18 +105,15 @@ def test_2d_local_convolution():
 def test_dense(input_size, output_size, seed):
     np.random.seed(seed)
     keras_model = keras.Sequential()
-    keras_dense = keras.layers.Dense(output_size, input_shape=(input_size,), use_bias=True)
+    keras_dense = keras.layers.Dense(output_size, input_shape=(input_size,), use_bias=True, bias_initializer='ones')
     keras_model.add(keras_dense)
 
-    weights = np.random.uniform(-100, 100, (input_size, output_size)).astype(np.float32)
-
-    keras_model.set_weights([weights])
-
     torch_model = translate.translate_fully_connected(keras_dense)[0].to(device)
-
-    keras_input = np.random.uniform(-100, 100,  (1, input_size)).astype(np.float32)
+    keras_input = np.random.uniform(-100, 100, (1, input_size)).astype(np.float32)
     keras_output = keras_model.predict(keras_input)
 
     torch_input = torch.Tensor(keras_input).to(device)
     torch_output = torch_model(torch_input).cpu().data.numpy()
-    assert np.isclose(keras_output, torch_output).all()
+    comparison = np.isclose(keras_output, torch_output).all()
+    print(comparison)
+    assert comparison

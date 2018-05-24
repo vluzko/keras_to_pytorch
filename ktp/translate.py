@@ -109,6 +109,7 @@ def translate_1d_locally_connected(layer: keras.layers.LocallyConnected1D) -> Tu
     else:
         raise NotImplementedError("Expected keras_weights to be of length 1 or 2. Was: {}. Full weights: {}".format(len(keras_weights), keras_weights))
 
+    # TODO: Change to Conv1dLocal
     pt_local_conv = locally_connected.Conv2dLocal(
         in_height=input_height,
         in_width=1,
@@ -129,8 +130,7 @@ def translate_1d_locally_connected(layer: keras.layers.LocallyConnected1D) -> Tu
     pt_local_conv.weight = nn.Parameter(reshaped)
 
     if bias_weights is not None:
-        reshaped_bias = bias_weights.reshape(pt_local_conv.bias.shape)
-        pt_local_conv.bias = Parameter(torch.Tensor(reshaped_bias))
+        pt_local_conv.bias = Parameter(torch.Tensor(bias_weights).view(pt_local_conv.bias.shape))
 
     activation = translate_activation(layer.activation)
 

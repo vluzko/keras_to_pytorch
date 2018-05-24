@@ -137,7 +137,7 @@ class MHCFlurryEnsemble(nn.Module):
 
     def forward(self, input):
         """Compute the geometric mean of the outputs of the individual models."""
-        outputs = (x(input) for x in self.models)
+        outputs = (to_ic50(x(input)) for x in self.models)
         prod = reduce(lambda a, b: a * b, outputs, 1)
         return torch.pow(prod, self.exp)
 
@@ -177,6 +177,20 @@ def model_architecture(network_json_string: str) -> type(MHCFlurryNet):
     layer_json = network_json["config"]["layers"]
     layer_names = tuple(x["class_name"] for x in layer_json)
     return architecture_maps[layer_names]
+
+
+def to_ic50(x, max_ic50=50000.0):
+    """Convert regression targets in the range [0.0, 1.0] to ic50s in the range
+    [0, 50000.0].
+
+    Args:
+        x: numpy.array of float
+        max_ic50:
+
+    Returns:
+        numpy.array of float
+    """
+    return max_ic50 ** (1.0 - x)
 
 
 def get_predictor(allele: str) -> MHCFlurryEnsemble:
