@@ -27,37 +27,49 @@ def test_predict():
     # print(prediction)
     ensemble = mhcflurry_model.get_predictor(allele)
     encoded_peptide = mhcflurry_model.peptides_to_network_input((peptide,), encoding="BLOSUM62")
-    # keras_model: mhcflurry.Class1AffinityPredictor = mhcflurry.Class1AffinityPredictor.load()
-    # networks: List[mhcflurry.Class1NeuralNetwork] = keras_model.allele_to_allele_specific_models[allele]
+    loaded_keras_model: mhcflurry.Class1AffinityPredictor = mhcflurry.Class1AffinityPredictor.load()
+    networks: List[mhcflurry.Class1NeuralNetwork] = loaded_keras_model.allele_to_allele_specific_models[allele]
 
-    mhc = ensemble.keras_models[0].predict([peptide])
-    pred = ensemble.forward(torch.Tensor(encoded_peptide.reshape((1, 15, 1, 21))))
+    # mhc = ensemble.keras_models[0].predict([peptide])
+    torch_pred = ensemble.forward(torch.Tensor(encoded_peptide.reshape((1, 15, 1, 21))))
+    keras_pred = loaded_keras_model.predict(allele=allele, peptides=(peptide, ))
+    print(torch_pred)
+    print(keras_pred)
+    # for keras_model, torch_model, loaded_net in zip(ensemble.keras_models, ensemble.models, networks):
+    #     anet = loaded_net.network()
+    #     bnet = keras_model.network()
+    #     aout = anet.predict(encoded_peptide)
+    #     kout = bnet.predict(encoded_peptide)
+    #     tin = torch.Tensor(encoded_peptide).reshape(1, 15, 1, 21)
+    #     tout = torch_model(tin).cpu().data.numpy().reshape(kout.shape)
+    #     assert np.isclose(kout, tout) and np.isclose(aout, tout)
 
-    for keras_model, torch_model in zip(ensemble.keras_models, ensemble.models):
-        bnet = keras_model.network()
-        i = 0
-        for keras_layer in bnet.layers:
-            if not isinstance(keras_layer, keras.layers.LocallyConnected1D) and not isinstance(keras_layer, keras.layers.Dense):
-                continue
-
-            torch_layer = torch_model.layers[i]
-            input_shape = keras_layer.input_shape[1:]
-            inputs = keras.Input(input_shape)
-            keras_model = keras.Model(inputs, keras_layer(inputs))
-            keras_input = np.random.uniform(-100, 100, (1, *input_shape)).astype(np.float32)
-            keras_output = keras_model.predict(keras_input)
-
-            if isinstance(torch_layer, locally_connected.Conv2dLocal):
-                keras_input = keras_input.reshape((1, *torch_layer.input_shape.numpy().astype(int)))
-
-            torch_input = torch.Tensor(keras_input).to(device)
-            torch_output = torch_layer(torch_input).cpu().data.numpy()
-            assert np.isclose(keras_output, torch_output).all()
-            i += 1
+    ipdb.set_trace()
+        # ipdb.set_trace()
+    #     i = 0
+    #     for keras_layer in bnet.layers:
+    #         if not isinstance(keras_layer, keras.layers.LocallyConnected1D) and not isinstance(keras_layer, keras.layers.Dense):
+    #             continue
+    #
+    #         torch_layer = torch_model.layers[i].to(device)
+    #         torch_act = torch_model.activations[i]
+    #         input_shape = keras_layer.input_shape[1:]
+    #         inputs = keras.Input(input_shape)
+    #         keras_model = keras.Model(inputs, keras_layer(inputs))
+    #         keras_input = np.random.uniform(-100, 100, (1, *input_shape)).astype(np.float32)
+    #         keras_output = keras_model.predict(keras_input)
+    #
+    #         if isinstance(torch_layer, locally_connected.Conv2dLocal):
+    #             keras_input = keras_input.reshape((1, *torch_layer.input_shape.numpy().astype(int)))
+    #
+    #         torch_input = torch.Tensor(keras_input).to(device)
+    #         after_mult = torch_layer(torch_input)
+    #         torch_output = torch_act(after_mult).cpu().data.numpy().reshape(keras_output.shape)
+    #         assert np.isclose(keras_output, torch_output, atol=1e-4, rtol=1e-4).all()
+    #         i += 1
 
     # mhcflurry_result = keras_model.predict([peptide], [allele])
     # print(mhcflurry_result)
-    ipdb.set_trace()
 
 
 def compare_layers(keras_layer, torch_layer, input_shape):

@@ -11,6 +11,7 @@ from io import StringIO
 from typing import NamedTuple, Tuple
 from pathlib import Path
 from functools import reduce, partial
+from scipy.stats.mstats import gmean
 
 import torch
 from torch import nn
@@ -126,6 +127,7 @@ class MHCFlurryEnsemble(nn.Module):
     """An ensemble of (usually eight) MHCFlurry nets.
 
     Attributes:
+        keras_models (Tuple[mhcflurry.Class1NeuralNetwork, ...]): The keras networks this ensemble was produced from.
     """
 
     def __init__(self, allele, models: Tuple[MHCFlurryNet, ...], keras_models: Tuple[mhcflurry.Class1NeuralNetwork, ...]):
@@ -137,9 +139,11 @@ class MHCFlurryEnsemble(nn.Module):
 
     def forward(self, input):
         """Compute the geometric mean of the outputs of the individual models."""
-        outputs = (to_ic50(x(input)) for x in self.models)
-        prod = reduce(lambda a, b: a * b, outputs, 1)
-        return torch.pow(prod, self.exp)
+        outputs = torch.Tensor(tuple(to_ic50(x(input)) for x in self.models))
+        log_sum = outputs.log().sum()
+        root = log_sum * self.exp
+        geometric_mean = root.exp()
+        return geometric_mean
 
     def keras_pred(self, input):
         """Make a prediction with the underlying keras models."""

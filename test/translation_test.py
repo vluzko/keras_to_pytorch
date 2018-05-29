@@ -114,6 +114,5 @@ def test_dense(input_size, output_size, seed):
 
     torch_input = torch.Tensor(keras_input).to(device)
     torch_output = torch_model(torch_input).cpu().data.numpy()
-    comparison = np.isclose(keras_output, torch_output).all()
-    print(comparison)
+    comparison = np.isclose(keras_output, torch_output, atol=1e-4, rtol=1e-4).all()
     assert comparison

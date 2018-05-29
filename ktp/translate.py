@@ -80,7 +80,6 @@ def translate_fully_connected(layer: keras.layers.Dense) -> Tuple[nn.Module, Cal
     _, input_size = layer.input_shape
     _, output_size = layer.output_shape
     kernel_weights, bias_weights = get_kernel_and_bias(layer)
-
     pt_dense = nn.Linear(input_size, output_size, bias=layer.use_bias)
     pt_dense.weight = nn.Parameter(torch.Tensor(kernel_weights.transpose()))
 

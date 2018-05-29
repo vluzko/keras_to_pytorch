@@ -65,6 +65,7 @@ def conv2d_local(input: torch.Tensor, weight: torch.Tensor,
     input_size = in_channels * kernel_height * kernel_width
     weights_view = weight.view(output_size, out_channels, input_size)
     permuted_weights = weights_view.permute(0, 2, 1)
+
     out = torch.matmul(reshaped_input, permuted_weights)
     out = out.view(reshaped_input.size(0), out_height, out_width, out_channels).permute(0, 3, 1, 2)
 
@@ -73,8 +74,10 @@ def conv2d_local(input: torch.Tensor, weight: torch.Tensor,
 
     if bias is not None:
         final_bias = bias.expand_as(out)
-        print("torch bias: {}".format(final_bias))
+        # print("torch bias: {}".format(final_bias))
         out = out + final_bias
+
+    # print("torch output: {}".format(out[0]))
 
     return out
 
