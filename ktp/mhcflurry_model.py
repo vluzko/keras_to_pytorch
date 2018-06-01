@@ -161,6 +161,29 @@ class MHCFlurryEnsemble(nn.Module):
         return cls(allele, models, keras_models)
 
 
+class AllEnsembles(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        manifest = pd.read_csv(str(manifest_path))
+        print(1)
+        self.alleles = {x for x in manifest['allele'] if x.startswith('HLA')}
+        self.ensemble_indices = {x: i for i, x in enumerate(self.alleles)}
+        self.ensembles = nn.ModuleList(get_predictor(x) for x in self.alleles)
+        
+    def forward(input, alleles: Tuple[str, ...]=()):
+        if alleles == ():
+            alleles = self.alleles
+
+        results = torch.Tensor(len(alleles)).view(len(alleles), 1)
+        for i, allele in enumerate(alleles):
+            ensemble_index = self.ensemble_indices[allele]
+            ensemble = self.ensembles[ensemble_index]
+            pred = ensemble(input)
+            results[i] = pred
+        return results
+
+
 def row_to_net(allele, row: pd.Series) -> Tuple[MHCFlurryNet, mhcflurry.Class1NeuralNetwork]:
     """Convert a row of the manifest to a PyTorch model and a keras model"""
     name = row["model_name"]

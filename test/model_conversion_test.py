@@ -21,28 +21,34 @@ man = pd.read_csv("test/mhcflurry_data/manifest.csv")
 
 
 def test_predict():
-    alleles = man['allele'].unique()
+    alleles = man[man['allele'].str.startswith('HLA')]['allele'].unique()
     peptide = "SIINFEKL"
     encoded_peptide = mhcflurry_model.peptides_to_network_input((peptide,), encoding="BLOSUM62")
     loaded_keras_model: mhcflurry.Class1AffinityPredictor = mhcflurry.Class1AffinityPredictor.load()
-    for allele in alleles:
-        ensemble = mhcflurry_model.get_predictor(allele)
-        # networks: List[mhcflurry.Class1NeuralNetwork] = loaded_keras_model.allele_to_allele_specific_models[allele]
+    all_torch = mhcflurry_model.AllEnsembles().to(device)
+    total = len(alleles)
+    for i, allele in enumerate(alleles):
+        print("Run {} of {}".format(i, total))
+        #ensemble = mhcflurry_model.get_predictor(allele)
+        #networks: List[mhcflurry.Class1NeuralNetwork] = loaded_keras_model.allele_to_allele_specific_models[allele]
         # mhc = ensemble.keras_models[0].predict([peptide])
-        torch_pred = ensemble.forward(torch.Tensor(encoded_peptide.reshape((1, 15, 1, 21))))
+        tinput = torch.Tensor(encoded_peptide.reshape((1, 15, 1, 21))).to(device)
+        #torch_pred = ensemble.forward(torch.Tensor(encoded_peptide.reshape((1, 15, 1, 21))))
+        torch_pred = all_torch.forward(tinput, alleles=(allele,)).cpu().data.numpy()
         keras_pred = loaded_keras_model.predict(allele=allele, peptides=[peptide])
         print(torch_pred)
         print(keras_pred)
         assert np.isclose(torch_pred, keras_pred)
 
-        # for keras_model, torch_model, loaded_net in zip(ensemble.keras_models, ensemble.models, networks):
-        #     anet = loaded_net.network()
-        #     bnet = keras_model.network()
-        #     aout = anet.predict(encoded_peptide)
-        #     kout = bnet.predict(encoded_peptide)
-        #     tin = torch.Tensor(encoded_peptide).reshape(1, 15, 1, 21)
-        #     tout = torch_model(tin).cpu().data.numpy().reshape(kout.shape)
-        #     assert np.isclose(kout, tout) and np.isclose(aout, tout)
+        #for keras_model, torch_model, loaded_net in zip(ensemble.keras_models, ensemble.models, networks):
+       #      anet = loaded_net.network()
+       #      bnet = keras_model.network()
+       #      aout = anet.predict(encoded_peptide)
+       #      kout = bnet.predict(encoded_peptide)
+       #      tin = torch.Tensor(encoded_peptide).reshape(1, 15, 1, 21)
+       #      tout = torch_model(tin).cpu().data.numpy().reshape(kout.shape)
+       #      assert np.isclose(kout, tout) and np.isclose(aout, tout)
+       # break
 
     # ipdb.set_trace()
         # ipdb.set_trace()
