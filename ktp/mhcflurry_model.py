@@ -151,6 +151,19 @@ class MHCFlurryEnsemble(nn.Module):
         geometric_mean = reduce(lambda a, b: a*b, preds, 1) ** self.exp
         return preds, geometric_mean
 
+    def save(self, path: Path):
+        for i, model in enumerate(self.models):
+            new_path = path / Path("torchMHC_{}_model_{}.pt".format(self.allele, i))
+            torch.save(model, str(new_path))
+
+    @classmethod
+    def load(cls, allele: str, path: Path):
+        saved_models = path.glob("torchMHC_{}_model_*.pt".format(allele))
+        models = tuple(torch.load(str(x)) for x in saved_models)
+        if len(models) == 0:
+            raise ValueError("No models available to be loaded.")
+        return cls(allele, models, ())
+
     @classmethod
     def ensemble_from_rows(cls, allele, model_rows: pd.DataFrame):
         """Create an ensemble model from the dataframe.
@@ -162,16 +175,30 @@ class MHCFlurryEnsemble(nn.Module):
 
 
 class AllEnsembles(nn.Module):
+    """Ensemble models for every human allele."""
 
-    def __init__(self):
+    def __init__(self, path_name: str="data/torchMHC", regenerate: bool=False):
         super().__init__()
         manifest = pd.read_csv(str(manifest_path))
-        print(1)
         self.alleles = {x for x in manifest['allele'] if x.startswith('HLA')}
         self.ensemble_indices = {x: i for i, x in enumerate(self.alleles)}
-        self.ensembles = nn.ModuleList(get_predictor(x) for x in self.alleles)
-        
-    def forward(input, alleles: Tuple[str, ...]=()):
+        ensembles = []
+        base_path = Path(path_name)
+        for allele in self.alleles:
+            print("Loading {}".format(allele))
+            try:
+                if regenerate:
+                    raise ValueError
+                ensemble = MHCFlurryEnsemble.load(allele, base_path)
+            except ValueError:
+                ensemble = get_predictor(allele)
+                ensemble.save(base_path)
+            ensembles.append(ensemble)
+            print("Finished loading {}".format(allele))
+
+        self.ensembles = nn.ModuleList(ensembles)
+
+    def forward(self, input, alleles: Tuple[str, ...]=()):
         if alleles == ():
             alleles = self.alleles
 
@@ -221,6 +248,7 @@ def to_ic50(x, max_ic50=50000.0):
 
 
 def get_predictor(allele: str) -> MHCFlurryEnsemble:
+    print("Called")
     manifest = pd.read_csv(str(manifest_path))
     relevant_rows = manifest[manifest['allele'] == allele]
     ensemble = MHCFlurryEnsemble.ensemble_from_rows(allele, relevant_rows)
