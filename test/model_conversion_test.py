@@ -1,13 +1,11 @@
 """Test converting full models"""
 import pandas as pd
 import numpy as np
-import keras
+import pytest
 import torch
 
-import ipdb
 import mhcflurry
 
-from typing import List
 from pathlib import Path
 
 from ktp import translate, models, mhcflurry_model, locally_connected
@@ -20,6 +18,7 @@ weights_dir = data_dir / Path("weights")
 man = pd.read_csv("test/mhcflurry_data/manifest.csv")
 
 
+@pytest.mark.skip()
 def test_predict():
     alleles = man[man['allele'].str.startswith('HLA')]['allele'].unique()
     # peptide = "SIINFEKL"
