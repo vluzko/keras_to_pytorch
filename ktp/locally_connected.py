@@ -11,7 +11,7 @@ from torch.nn.functional import unfold
 
 Pairable = Union[int, Tuple[int, int]]
 
-import ipdb
+
 def conv2d_local(input: torch.Tensor, weight: torch.Tensor,
                  bias=None,
                  padding: Pairable=0,
@@ -56,12 +56,9 @@ def conv2d_local(input: torch.Tensor, weight: torch.Tensor,
                 slice_row = slice(y, y + kernel_size[0])
                 x = j * stride_x
                 slice_col = slice(x, x + kernel_size[1])
-                # Should be n x 3 x 1 x 21
                 val = input[:, slice_row, slice_col, :].contiguous()
                 xs.append(val.view(input.shape[0], 1, -1, feature_dim))
-        # Should be n x 13 x 1 x 63
         concated = torch.cat(xs, dim=1)
-        # Should be n x 13 x 1 x 63
         reshaped_input = concated
 
     output_size = out_height * out_width
@@ -76,10 +73,7 @@ def conv2d_local(input: torch.Tensor, weight: torch.Tensor,
 
     if bias is not None:
         final_bias = bias.expand_as(out)
-        # print("torch bias: {}".format(final_bias))
         out = out + final_bias
-
-    # print("torch output: {}".format(out[0]))
 
     return out
 

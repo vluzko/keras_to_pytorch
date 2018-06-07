@@ -62,50 +62,46 @@ def test_1d_local_convolution():
             np.isclose(keras_1d_output.reshape(keras_flattened_output.shape), torch_1d_output, atol=1e-3, rtol=1e-3).all()))
 
 
-# TODO: Change to Hypothesis
-def test_2d_local_convolution():
+@given(integers(min_value=1, max_value=5), integers(min_value=2, max_value=30), integers(min_value=2, max_value=30), integers(min_value=1, max_value=15),
+       integers(min_value=1, max_value=20))
+def test_2d_local_convolution(batch_exp, input_height, input_width, in_channels, filters):
     """Compare keras and PyTorch 2D locally connected layers on randomly generated values."""
-    for i in range(10):
-        batch_size = 4
-        data_format = np.random.choice(("channels_first", "channels_last"))
-        input_height = np.random.randint(2, 15)
-        input_width = np.random.randint(2, 15)
-        in_channels = np.random.randint(2, 15)
-        kernel_height = np.random.randint(1, input_height)
-        kernel_width = np.random.randint(1, input_width)
-        filters = np.random.randint(1, 20)
+    batch_size = 2 ** batch_exp
+    data_format = np.random.choice(("channels_first", "channels_last"))
+    kernel_height = np.random.randint(1, input_height)
+    kernel_width = np.random.randint(1, input_width)
 
-        if data_format == "channels_last":
-            input_shape = (input_height, input_width, in_channels)
-        else:
-            input_shape = (in_channels, input_height, input_width)
+    if data_format == "channels_last":
+        input_shape = (input_height, input_width, in_channels)
+    else:
+        input_shape = (in_channels, input_height, input_width)
 
-        # Create keras model
-        keras_model = keras.Sequential()
-        keras_local = keras.layers.LocallyConnected2D(filters, (kernel_height, kernel_width),
-                                                      use_bias=False,
-                                                      input_shape=input_shape,
-                                                      data_format=data_format)
-        keras_model.add(keras_local)
+    # Create keras model
+    keras_model = keras.Sequential()
+    keras_local = keras.layers.LocallyConnected2D(filters, (kernel_height, kernel_width),
+                                                  use_bias=False,
+                                                  input_shape=input_shape,
+                                                  data_format=data_format)
+    keras_model.add(keras_local)
 
-        # Setup weights
-        weights = np.random.uniform(-10, 10, keras_local.kernel.shape.as_list()).astype(np.float32)
-        keras_model.set_weights([weights])
+    # Setup weights
+    weights = np.random.uniform(-10, 10, keras_local.kernel.shape.as_list()).astype(np.float32)
+    keras_model.set_weights([weights])
 
-        # Translate keras to PyTorch model
-        torch_model = translate.translate_2d_locally_connected(keras_local)[0].to(device)
+    # Translate keras to PyTorch model
+    torch_model = translate.translate_2d_locally_connected(keras_local)[0].to(device)
 
-        keras_input = np.random.uniform(-10, 10, (batch_size,) + input_shape).astype(np.float32)
-        keras_output = keras_model.predict(keras_input)
+    keras_input = np.random.uniform(-10, 10, (batch_size,) + input_shape).astype(np.float32)
+    keras_output = keras_model.predict(keras_input)
 
-        torch_input = torch.Tensor(keras_input).to(device)
-        torch_output = torch_model(torch_input).cpu().data.numpy()
-        assert np.isclose(keras_output, torch_output, atol=1e-3, rtol=1e-3).all()
+    torch_input = torch.Tensor(keras_input).to(device)
+    torch_output = torch_model(torch_input).cpu().data.numpy()
+    assert np.isclose(keras_output, torch_output, atol=1e-3, rtol=1e-3).all()
 
 
-@given(integers(min_value=1, max_value=32), integers(min_value=1, max_value=100), integers(min_value=1, max_value=100), integers(min_value=1))
-# @settings(max_examples=10)
-def test_dense(batch_size, input_size, output_size, seed):
+@given(integers(min_value=1, max_value=5), integers(min_value=1, max_value=100), integers(min_value=1, max_value=100), integers(min_value=1))
+def test_dense(batch_exp, input_size, output_size, seed):
+    batch_size = 2 ** batch_exp
     np.random.seed(seed)
     keras_model = keras.Sequential()
     keras_dense = keras.layers.Dense(output_size, input_shape=(input_size, ), use_bias=True, bias_initializer='ones')
