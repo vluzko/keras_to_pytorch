@@ -56,10 +56,13 @@ def conv2d_local(input: torch.Tensor, weight: torch.Tensor,
                 slice_row = slice(y, y + kernel_size[0])
                 x = j * stride_x
                 slice_col = slice(x, x + kernel_size[1])
+                # Should be n x 3 x 1 x 21
                 val = input[:, slice_row, slice_col, :].contiguous()
-                xs.append(val.view(1, -1, feature_dim))
-        concated = torch.cat(xs)
-        reshaped_input = concated.view(1, *concated.shape)
+                xs.append(val.view(input.shape[0], 1, -1, feature_dim))
+        # Should be n x 13 x 1 x 63
+        concated = torch.cat(xs, dim=1)
+        # Should be n x 13 x 1 x 63
+        reshaped_input = concated
 
     output_size = out_height * out_width
     input_size = in_channels * kernel_height * kernel_width
@@ -67,8 +70,7 @@ def conv2d_local(input: torch.Tensor, weight: torch.Tensor,
     permuted_weights = weights_view.permute(0, 2, 1)
 
     out = torch.matmul(reshaped_input, permuted_weights)
-    out = out.view(reshaped_input.size(0), out_height, out_width, out_channels).permute(0, 3, 1, 2)
-
+    out = out.view(reshaped_input.shape[0], out_height, out_width, out_channels).permute(0, 3, 1, 2)
     if data_format == "channels_last":
         out = out.permute(0, 2, 3, 1)
 

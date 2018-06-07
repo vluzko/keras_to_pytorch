@@ -18,6 +18,7 @@ def test_1d_local_convolution():
     Currently a 1D PyTorch layer is just a flattened 2D PyTorch layer, so really this is a test that the translation process works correctly.
     """
     for i in range(10):
+        batch_size = 2 ** np.random.randint(1, 5)
         input_height = np.random.randint(2, 10)
         in_channels = np.random.randint(1, 10)
         kernel_size = np.random.randint(1, input_height)
@@ -45,8 +46,8 @@ def test_1d_local_convolution():
         torch_1d_model = translate.translate_1d_locally_connected(keras_1d_layer)[0].to(device)
 
         # Generate inputs.
-        keras_1d_input = np.arange(input_height * in_channels).reshape((1, input_height, in_channels)).astype(np.float32)
-        keras_2d_input = keras_1d_input.reshape((1, input_height, 1, in_channels))
+        keras_1d_input = np.arange(batch_size * input_height * in_channels).reshape((batch_size, input_height, in_channels)).astype(np.float32)
+        keras_2d_input = keras_1d_input.reshape((batch_size, input_height, 1, in_channels))
         torch_input = torch.Tensor(keras_2d_input).to(device)
 
         # Compute and compare outputs.
@@ -57,14 +58,15 @@ def test_1d_local_convolution():
         output_shape = keras_flattened_output.shape
         assert all((
             (keras_1d_output.reshape(output_shape) == keras_flattened_output).all(),
-            np.isclose(keras_1d_output.reshape(keras_flattened_output.shape), torch_flattened_output, atol=1e-4, rtol=1e-4).all(),
-            np.isclose(keras_1d_output.reshape(keras_flattened_output.shape), torch_1d_output, atol=1e-4, rtol=1e-4).all()))
+            np.isclose(keras_1d_output.reshape(keras_flattened_output.shape), torch_flattened_output, atol=1e-3, rtol=1e-3).all(),
+            np.isclose(keras_1d_output.reshape(keras_flattened_output.shape), torch_1d_output, atol=1e-3, rtol=1e-3).all()))
 
 
 # TODO: Change to Hypothesis
 def test_2d_local_convolution():
     """Compare keras and PyTorch 2D locally connected layers on randomly generated values."""
     for i in range(10):
+        batch_size = 4
         data_format = np.random.choice(("channels_first", "channels_last"))
         input_height = np.random.randint(2, 15)
         input_width = np.random.randint(2, 15)
@@ -93,12 +95,12 @@ def test_2d_local_convolution():
         # Translate keras to PyTorch model
         torch_model = translate.translate_2d_locally_connected(keras_local)[0].to(device)
 
-        keras_input = np.random.uniform(-10, 10, (1,) + input_shape).astype(np.float32)
+        keras_input = np.random.uniform(-10, 10, (batch_size,) + input_shape).astype(np.float32)
         keras_output = keras_model.predict(keras_input)
 
         torch_input = torch.Tensor(keras_input).to(device)
         torch_output = torch_model(torch_input).cpu().data.numpy()
-        assert np.isclose(keras_output, torch_output, atol=1e-4, rtol=1e-4).all()
+        assert np.isclose(keras_output, torch_output, atol=1e-3, rtol=1e-3).all()
 
 
 @given(integers(min_value=1, max_value=32), integers(min_value=1, max_value=100), integers(min_value=1, max_value=100), integers(min_value=1))

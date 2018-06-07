@@ -67,7 +67,7 @@ def test_batch_predict():
     # peptide = "SIINFEKL"
 
     sample_peptides = (
-        'RDAVILLM', 'VYEAADMI', 'RLLSPTTIV', 'LAYTIGTTHF', 'FPVTPQVPV', 'KSLFNTVATL', 'GLVILLVLAL', 'SLFGGMSWI', 'RDWAHNSL', 'TSAVLLLLVV', 'MLVQSCTSI', 'LLDAHIPQL', 'SLYNTVAAL',
+        'RDAVILLM', 'VYEAADMI', 'RLLSPTTIV', 'LAYTIGTTHF', 'FPVTPQVPV', 'KSLFNTVATL', 'GLVILLVLAL', 'SLFGGMSWI', 'RDWAHNSL', 'TSAVLLLLVV'
     )
     encoded_peptides = tuple(mhcflurry_model.peptides_to_network_input((x, ), encoding="BLOSUM62") for x in sample_peptides)
     as_tensors = tuple(torch.Tensor(x).view(15, 1, 21) for x in encoded_peptides)
@@ -79,7 +79,7 @@ def test_batch_predict():
     # results = {a: [] for a in alleles}
     allele = alleles[0]
 
-    result = all_torch(batch, alleles=(allele,))
+    result = all_torch(batch[:2], alleles=(allele,))
 
     # total = len(alleles)
     # for i, allele in enumerate(alleles):
