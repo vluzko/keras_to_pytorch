@@ -12,54 +12,51 @@ from ktp import translate
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-# TODO: Change to Hypothesis
-def test_1d_local_convolution():
+@given(integers(min_value=1, max_value=5), integers(min_value=2, max_value=30), integers(min_value=2, max_value=30), integers(min_value=1, max_value=15))
+def test_1d_local_convolution(batch_exp, input_height, in_channels, filters):
     """Compare 1D keras and PyTorch layers to flattened 2D keras and PyTorch layers.
     Currently a 1D PyTorch layer is just a flattened 2D PyTorch layer, so really this is a test that the translation process works correctly.
     """
-    for i in range(10):
-        batch_size = 2 ** np.random.randint(1, 5)
-        input_height = np.random.randint(2, 10)
-        in_channels = np.random.randint(1, 10)
-        kernel_size = np.random.randint(1, input_height)
-        filters = np.random.randint(1, 20)
-        input1_shape = (input_height, in_channels)
-        input2_shape = (input_height, 1, in_channels)
+    batch_size = 2 ** batch_exp
+    kernel_size = np.random.randint(1, input_height)
+    input1_shape = (input_height, in_channels)
+    input2_shape = (input_height, 1, in_channels)
 
-        # First model
-        keras_1d_model = keras.Sequential()
-        keras_1d_layer = keras.layers.LocallyConnected1D(filters, kernel_size, input_shape=input1_shape)
-        keras_1d_model.add(keras_1d_layer)
+    # First model
+    keras_1d_model = keras.Sequential()
+    keras_1d_layer = keras.layers.LocallyConnected1D(filters, kernel_size, input_shape=input1_shape)
+    keras_1d_model.add(keras_1d_layer)
 
-        # Flattened keras 2D locally connected
-        keras_flattened_2d_model = keras.Sequential()
-        keras_flattened_2d_layer = keras.layers.LocallyConnected2D(filters, (kernel_size, 1), input_shape=input2_shape)
-        keras_flattened_2d_model.add(keras_flattened_2d_layer)
+    # Flattened keras 2D locally connected
+    keras_flattened_2d_model = keras.Sequential()
+    keras_flattened_2d_layer = keras.layers.LocallyConnected2D(filters, (kernel_size, 1), input_shape=input2_shape)
+    keras_flattened_2d_model.add(keras_flattened_2d_layer)
 
-        # Copy weights
-        weights = np.random.uniform(-10, 10, keras_1d_layer.kernel_shape).astype(np.float32)
-        keras_1d_model.set_weights([weights])
-        keras_flattened_2d_model.set_weights([weights.reshape(keras_flattened_2d_layer.kernel_shape)])
+    # Copy weights
+    weights = np.random.uniform(-100, 100, keras_1d_layer.kernel_shape).astype(np.float32)
+    keras_1d_model.set_weights([weights])
+    keras_flattened_2d_model.set_weights([weights.reshape(keras_flattened_2d_layer.kernel_shape)])
 
-        # Flattened PyTorch 2D locally connected.
-        torch_flattened_model = translate.translate_2d_locally_connected(keras_flattened_2d_layer)[0].to(device)
-        torch_1d_model = translate.translate_1d_locally_connected(keras_1d_layer)[0].to(device)
+    # Flattened PyTorch 2D locally connected.
+    torch_flattened_model = translate.translate_2d_locally_connected(keras_flattened_2d_layer)[0].to(device)
+    torch_1d_model = translate.translate_1d_locally_connected(keras_1d_layer)[0].to(device)
 
-        # Generate inputs.
-        keras_1d_input = np.arange(batch_size * input_height * in_channels).reshape((batch_size, input_height, in_channels)).astype(np.float32)
-        keras_2d_input = keras_1d_input.reshape((batch_size, input_height, 1, in_channels))
-        torch_input = torch.Tensor(keras_2d_input).to(device)
+    # Generate inputs.
+    keras_1d_input = np.arange(batch_size * input_height * in_channels).reshape((batch_size, input_height, in_channels)).astype(np.float32)
+    keras_2d_input = keras_1d_input.reshape((batch_size, input_height, 1, in_channels))
+    torch_input = torch.Tensor(keras_2d_input).to(device)
 
-        # Compute and compare outputs.
-        keras_1d_output = keras_1d_model.predict(keras_1d_input)
-        keras_flattened_output = keras_flattened_2d_model.predict(keras_2d_input)
-        torch_flattened_output = torch_flattened_model(torch_input).cpu().data.numpy()
-        torch_1d_output = torch_1d_model(torch_input).cpu().data.numpy()
-        output_shape = keras_flattened_output.shape
-        assert all((
-            (keras_1d_output.reshape(output_shape) == keras_flattened_output).all(),
-            np.isclose(keras_1d_output.reshape(keras_flattened_output.shape), torch_flattened_output, atol=1e-3, rtol=1e-3).all(),
-            np.isclose(keras_1d_output.reshape(keras_flattened_output.shape), torch_1d_output, atol=1e-3, rtol=1e-3).all()))
+    # Compute and compare outputs.
+    keras_1d_output = keras_1d_model.predict(keras_1d_input)
+    keras_flattened_output = keras_flattened_2d_model.predict(keras_2d_input)
+    torch_flattened_output = torch_flattened_model(torch_input).cpu().data.numpy()
+    torch_1d_output = torch_1d_model(torch_input).cpu().data.numpy()
+    output_shape = keras_flattened_output.shape
+    reshaped_1d = keras_1d_output.reshape(output_shape)
+    assert all((
+        (reshaped_1d == keras_flattened_output).all(),
+        np.isclose(reshaped_1d, torch_flattened_output, atol=1e-3, rtol=1e-3).all(),
+        np.isclose(reshaped_1d, torch_1d_output, atol=1e-3, rtol=1e-3).all()))
 
 
 @given(integers(min_value=1, max_value=5), integers(min_value=2, max_value=30), integers(min_value=2, max_value=30), integers(min_value=1, max_value=15),
