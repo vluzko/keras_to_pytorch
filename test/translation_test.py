@@ -1,6 +1,6 @@
 """Comparison tests between pre and post translation layers."""
-from hypothesis import given, settings
-from hypothesis.strategies import floats, integers
+from hypothesis import given, settings, reproduce_failure
+from hypothesis.strategies import floats, integers, data, booleans
 from hypothesis.extra.numpy import arrays
 
 import numpy as np
@@ -60,13 +60,16 @@ def test_1d_local_convolution(batch_exp, input_height, in_channels, filters):
 
 
 @given(integers(min_value=1, max_value=5), integers(min_value=2, max_value=30), integers(min_value=2, max_value=30), integers(min_value=1, max_value=15),
-       integers(min_value=1, max_value=20))
-def test_2d_local_convolution(batch_exp, input_height, input_width, in_channels, filters):
+       integers(min_value=1, max_value=20), data(), booleans())
+def test_2d_local_convolution(batch_exp, input_height, input_width, in_channels, filters, drawer, is_first):
     """Compare keras and PyTorch 2D locally connected layers on randomly generated values."""
     batch_size = 2 ** batch_exp
-    data_format = np.random.choice(("channels_first", "channels_last"))
-    kernel_height = np.random.randint(1, input_height)
-    kernel_width = np.random.randint(1, input_width)
+    if is_first:
+        data_format = "channels_first"
+    else:
+        data_format = "channels_last"
+    kernel_height = drawer.draw(integers(min_value=1, max_value=input_height-1))
+    kernel_width = drawer.draw(integers(min_value=1, max_value=input_width-1))
 
     if data_format == "channels_last":
         input_shape = (input_height, input_width, in_channels)
@@ -76,13 +79,14 @@ def test_2d_local_convolution(batch_exp, input_height, input_width, in_channels,
     # Create keras model
     keras_model = keras.Sequential()
     keras_local = keras.layers.LocallyConnected2D(filters, (kernel_height, kernel_width),
-                                                  use_bias=False,
+                                                  use_bias=True,
+                                                  bias_initializer="random_uniform",
                                                   input_shape=input_shape,
                                                   data_format=data_format)
     keras_model.add(keras_local)
 
     # Setup weights
-    weights = np.random.uniform(-10, 10, keras_local.kernel.shape.as_list()).astype(np.float32)
+    weights = drawer.draw(arrays(shape=keras_local.kernel.shape.as_list(), dtype=np.float32, elements=floats(min_value=-1e6, max_value=1e6)))
     keras_model.set_weights([weights])
 
     # Translate keras to PyTorch model
@@ -93,6 +97,10 @@ def test_2d_local_convolution(batch_exp, input_height, input_width, in_channels,
 
     torch_input = torch.Tensor(keras_input).to(device)
     torch_output = torch_model(torch_input).cpu().data.numpy()
+    nan_fill = np.random.uniform(-5, 5)
+    assert (np.isnan(keras_output) == np.isnan(torch_output)).all()
+    keras_output[np.isnan(keras_output)] = nan_fill
+    torch_output[np.isnan(torch_output)] = nan_fill
     assert np.isclose(keras_output, torch_output, atol=1e-3, rtol=1e-3).all()
 
 
