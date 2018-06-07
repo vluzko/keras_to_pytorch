@@ -65,7 +65,7 @@ class NoLocal(MHCFlurryNet):
     architecture = ('InputLayer', 'Flatten', 'Dense', 'Dense')
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        output = input.view(-1)
+        output = input.view(input.shape[0], -1)
         for layer, act in zip(self.layers, self.activations):
             output = act(layer(output))
         return output
@@ -86,7 +86,7 @@ class OneLocal(MHCFlurryNet):
         output = input
         for layer, act in zip(self.layers[:1], self.activations[:1]):
             output = act(layer(output))
-        output = output.view(-1)
+        output = output.view(output.shape[0], -1)
         for layer, act in zip(self.layers[1:], self.activations[1:]):
             output = act(layer(output))
         return output
@@ -109,7 +109,7 @@ class TwoLocal(MHCFlurryNet):
         output = input
         for layer, act in zip(self.layers[:2], self.activations[:2]):
             output = act(layer(output))
-        output = output.view(-1)
+        output = output.view(output.shape[0], -1)
         for layer, act in zip(self.layers[2:], self.activations[2:]):
             output = act(layer(output))
         return output

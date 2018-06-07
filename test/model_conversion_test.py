@@ -61,15 +61,34 @@ def test_predict():
         df.columns = ["peptide", "torchMHC_prediction", "MHCFlurry_prediction"]
         df.to_csv("data/results_{}.csv".format(allele))
 
+import ipdb
+def test_batch_predict():
+    alleles = man[man['allele'].str.startswith('HLA')]['allele'].unique()
+    # peptide = "SIINFEKL"
 
-def compare_layers(keras_layer, torch_layer, input_shape):
-    """Compare a Keras and a PyTorch layer."""
-    keras_input = np.random.uniform(-100, 100, input_shape).astype(np.float32)
-    keras_output = keras_layer.call(keras_input)
+    sample_peptides = (
+        'RDAVILLM', 'VYEAADMI', 'RLLSPTTIV', 'LAYTIGTTHF', 'FPVTPQVPV', 'KSLFNTVATL', 'GLVILLVLAL', 'SLFGGMSWI', 'RDWAHNSL', 'TSAVLLLLVV', 'MLVQSCTSI', 'LLDAHIPQL', 'SLYNTVAAL',
+    )
+    encoded_peptides = tuple(mhcflurry_model.peptides_to_network_input((x, ), encoding="BLOSUM62") for x in sample_peptides)
+    as_tensors = tuple(torch.Tensor(x).view(15, 1, 21) for x in encoded_peptides)
+    batch = torch.stack(as_tensors).to(device)
+    # encoded_peptide = mhcflurry_model.peptides_to_network_input((peptide,), encoding="BLOSUM62")
+    loaded_keras_model: mhcflurry.Class1AffinityPredictor = mhcflurry.Class1AffinityPredictor.load()
+    all_torch = mhcflurry_model.AllEnsembles().to(device)
 
-    if isinstance(torch_layer, locally_connected.Conv2dLocal):
-        keras_input = keras_input.reshape((1, *torch_layer.input_shape))
+    # results = {a: [] for a in alleles}
+    allele = alleles[0]
 
-    torch_input = torch.Tensor(keras_input).to(device)
-    torch_output = torch_layer(torch_input).cpu().data.numpy()
-    assert np.isclose(keras_output, torch_output).all()
+    result = all_torch(batch, alleles=(allele,))
+
+    # total = len(alleles)
+    # for i, allele in enumerate(alleles):
+        # print("Run {} of {}".format(i, total))
+        # for peptide, encoding in zip(sample_peptides, encoded_peptides):
+        #     tinput = torch.Tensor(encoding.reshape((1, 15, 1, 21))).to(device)
+        #     torch_pred = all_torch.forward(tinput, alleles=(allele,)).cpu().data.numpy()[0][0]
+        #     keras_pred = loaded_keras_model.predict(allele=allele, peptides=[peptide])[0]
+        #     assert np.isclose(torch_pred, keras_pred)
+        #     results[allele].append((peptide, torch_pred, keras_pred))
+
+        # break

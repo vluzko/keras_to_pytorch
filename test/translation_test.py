@@ -1,5 +1,5 @@
 """Comparison tests between pre and post translation layers."""
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis.strategies import floats, integers
 from hypothesis.extra.numpy import arrays
 
@@ -101,15 +101,16 @@ def test_2d_local_convolution():
         assert np.isclose(keras_output, torch_output, atol=1e-4, rtol=1e-4).all()
 
 
-@given(integers(min_value=1, max_value=100), integers(min_value=1, max_value=100), integers(min_value=1))
-def test_dense(input_size, output_size, seed):
+@given(integers(min_value=1, max_value=32), integers(min_value=1, max_value=100), integers(min_value=1, max_value=100), integers(min_value=1))
+# @settings(max_examples=10)
+def test_dense(batch_size, input_size, output_size, seed):
     np.random.seed(seed)
     keras_model = keras.Sequential()
-    keras_dense = keras.layers.Dense(output_size, input_shape=(input_size,), use_bias=True, bias_initializer='ones')
+    keras_dense = keras.layers.Dense(output_size, input_shape=(input_size, ), use_bias=True, bias_initializer='ones')
     keras_model.add(keras_dense)
 
     torch_model = translate.translate_fully_connected(keras_dense)[0].to(device)
-    keras_input = np.random.uniform(-100, 100, (1, input_size)).astype(np.float32)
+    keras_input = np.random.uniform(-100, 100, (batch_size, input_size)).astype(np.float32)
     keras_output = keras_model.predict(keras_input)
 
     torch_input = torch.Tensor(keras_input).to(device)
