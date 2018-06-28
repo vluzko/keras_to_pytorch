@@ -74,7 +74,7 @@ def translate_activation(activation):
         raise NotImplementedError
 
 
-# TODO: Keras is the transpose of the default Pytorch behavior. Extend this to account for that (transpose the input, transpose the output).
+@translate_layer.register(keras.layers.Dense)
 def translate_fully_connected(layer: keras.layers.Dense) -> Tuple[nn.Module, Callable]:
     """Translate a fully connected layer."""
     _, input_size = layer.input_shape
@@ -91,6 +91,7 @@ def translate_fully_connected(layer: keras.layers.Dense) -> Tuple[nn.Module, Cal
     return pt_dense, activation
 
 
+@translate_layer.register(keras.layers.LocallyConnected1D)
 def translate_1d_locally_connected(layer: keras.layers.LocallyConnected1D) -> Tuple[nn.Module, Callable]:
     """Translate a 1-dimensional locally connected layer."""
     input_height, in_channels = layer.input.shape.as_list()[-2:]
@@ -136,6 +137,7 @@ def translate_1d_locally_connected(layer: keras.layers.LocallyConnected1D) -> Tu
     return pt_local_conv, activation
 
 
+@translate_layer.register(keras.layers.LocallyConnected2D)
 def translate_2d_locally_connected(layer: keras.layers.LocallyConnected2D) -> Tuple[nn.Module, Callable]:
     """Translate a 2-dimensional locally connected layer."""
     # Extract various size and shape parameters
@@ -195,11 +197,25 @@ def translate_flatten(layer: keras.layers.Flatten) -> Tuple[nn.Module, Callable]
     raise NotImplementedError
 
 
+@translate_layer.register(keras.layers.Conv1D)
 def translate_conv1d(layer: keras.layers.Conv1D) -> Tuple[nn.Module, Callable]:
     """Translate a 1D convolution"""
-    raise NotImplementedError
+    batch_size, input_size, in_channels = layer.input_shape
+    _, output_size, out_channels = layer.output_shape
+    kernel, bias = layer.get_weights()
+    stride = layer.strides
+
+    torch_layer = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=layer.kernel_size, bias=layer.use_bias)
+    reshaped_weights = nn.Parameter(torch.Tensor(kernel).permute(2, 1, 0))
+    torch_layer.weight = reshaped_weights
+    torch_layer.bias = nn.Parameter(torch.Tensor(bias))
+
+    act = translate_activation(layer.activation)
+
+    return torch_layer, act
 
 
+@translate_layer.register(keras.layers.Conv2D)
 def translate_conv2d(layer: keras.layers.Conv2D) -> Tuple[nn.Module, Callable]:
     """Translate a 2D convolution"""
     raise NotImplementedError

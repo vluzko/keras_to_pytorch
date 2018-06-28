@@ -38,7 +38,7 @@ def test_1d_local_convolution(batch_exp, input_height, in_channels, filters):
     keras_flattened_2d_model.set_weights([weights.reshape(keras_flattened_2d_layer.kernel_shape)])
 
     # Flattened PyTorch 2D locally connected.
-    torch_flattened_model = translate.translate_2d_locally_connected(keras_flattened_2d_layer)[0].to(device)
+    torch_flattened_model = translate.translate_layer(keras_flattened_2d_layer)[0].to(device)
     torch_1d_model = translate.translate_1d_locally_connected(keras_1d_layer)[0].to(device)
 
     # Generate inputs.
@@ -90,7 +90,7 @@ def test_2d_local_convolution(batch_exp, input_height, input_width, in_channels,
     keras_model.set_weights([weights])
 
     # Translate keras to PyTorch model
-    torch_model = translate.translate_2d_locally_connected(keras_local)[0].to(device)
+    torch_model = translate.translate_layer(keras_local)[0].to(device)
 
     keras_input = np.random.uniform(-10, 10, (batch_size,) + input_shape).astype(np.float32)
     keras_output = keras_model.predict(keras_input)
@@ -112,7 +112,7 @@ def test_dense(batch_exp, input_size, output_size, seed):
     keras_dense = keras.layers.Dense(output_size, input_shape=(input_size, ), use_bias=True, bias_initializer='ones')
     keras_model.add(keras_dense)
 
-    torch_model = translate.translate_fully_connected(keras_dense)[0].to(device)
+    torch_model = translate.translate_layer(keras_dense)[0].to(device)
     keras_input = np.random.uniform(-100, 100, (batch_size, input_size)).astype(np.float32)
     keras_output = keras_model.predict(keras_input)
 
@@ -120,3 +120,29 @@ def test_dense(batch_exp, input_size, output_size, seed):
     torch_output = torch_model(torch_input).cpu().data.numpy()
     comparison = np.isclose(keras_output, torch_output, atol=1e-4, rtol=1e-4).all()
     assert comparison
+
+
+def test_conv1d():
+    """Test 1D convolution translation."""
+    filters = 3
+    kernel_size = 2
+    strides = 1
+    batch_size = 2
+    in_channels = 3
+    input_size = 5
+    input_shape = (batch_size, input_size, in_channels)
+
+    keras_layer = keras.layers.Conv1D(filters=filters, kernel_size=kernel_size, strides=strides, use_bias=True, bias_initializer="ones")
+    input_layer = keras.Input(batch_shape=input_shape)
+    keras_model = keras.models.Model(input=input_layer, outputs=keras_layer(input_layer))
+
+    new_weights = np.arange(18).reshape(2, 3, 3)
+    keras_layer.set_weights([new_weights, keras_layer.get_weights()[1]])
+
+    kinput = np.arange(batch_size * input_size * in_channels).reshape(input_shape)
+    kout = keras_model.predict(kinput)
+
+    torch_model, _ = translate.translate_layer(keras_layer)
+    tinput = torch.Tensor(kinput).permute(0, 2, 1)
+    tout = torch_model(tinput).permute(0, 2, 1)
+    assert np.isclose(kout, tout.cpu().data.numpy()).all()
